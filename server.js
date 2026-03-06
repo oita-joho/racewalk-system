@@ -15,7 +15,7 @@ const WebSocket = require("ws");
 const PORT = process.env.PORT || 8080;
 const DATA_DIR = path.join(__dirname, "data");
 const ROSTER_FILE = (g) => path.join(DATA_DIR, `roster_g${g}.json`);
-const PINS_FILE = path.join(DATA_DIR, "pins.json");
+const TOKENS_FILE = path.join(DATA_DIR, "tokens.json");
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
