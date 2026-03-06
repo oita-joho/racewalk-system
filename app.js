@@ -27,7 +27,6 @@ function parseCsv(text){
 
     if (inQuotes){
       if (ch === '"'){
-        // "" -> "
         if (text[i+1] === '"'){ cell += '"'; i += 2; continue; }
         inQuotes = false; i++; continue;
       }
@@ -41,7 +40,6 @@ function parseCsv(text){
     }
 
     if (ch === "\r"){
-      // CRLF
       if (text[i+1] === "\n") i++;
       row.push(cell); rows.push(row);
       row = []; cell = ""; i++; continue;
@@ -55,21 +53,17 @@ function parseCsv(text){
     cell += ch; i++;
   }
 
-  // last
   if (cell.length || row.length){
     row.push(cell); rows.push(row);
   }
 
-  // trim
   return rows.map(r => r.map(c => String(c ?? "").trim()));
 }
 
 function csvRowsToRoster(rows){
-  // 空行除去
   const cleaned = rows.filter(r => r.some(c => String(c||"").trim() !== ""));
   if (!cleaned.length) return [];
 
-  // 1行目がヘッダっぽいなら捨てる
   const h0 = (cleaned[0][0]||"").toLowerCase();
   if (h0 === "lane" || h0 === "レーン" || h0.includes("lane")){
     cleaned.shift();
@@ -83,17 +77,15 @@ function csvRowsToRoster(rows){
     const team = String(r[3] ?? "").trim();
 
     if (!lane || !name) continue;
-    if (!/^\d+$/.test(lane)) continue; // 半角数字のみ
+    if (!/^\d+$/.test(lane)) continue;
 
     out.push({ lane, bib, name, team });
   }
 
-  // lane重複は後勝ちで上書き
   const map = {};
   for (const a of out) map[String(a.lane)] = a;
   return Object.values(map).sort((a,b)=>(parseInt(a.lane,10)||0)-(parseInt(b.lane,10)||0));
 }
-
 
 // ===== export / print helpers =====
 function csvCell(v){
@@ -142,42 +134,39 @@ function levelLabel(lv) {
 }
 
 function exportCsv(){
-  // ★役割で絞り込まれていない「全履歴」を出力
   const list = (itemsAll||[])
     .filter(x => x.status !== "cancelled")
     .sort((a,b)=>(a.tsMs||0)-(b.tsMs||0));
 
-// exportCsv() の中：ここを置き換え
-const header = [
-  "group","bib","name","team","lane","type","judgeId","time","level","status","id","raceId"
-];
-const rows = [header];
+  const header = [
+    "group","bib","name","team","lane","type","judgeId","time","level","status","id","raceId"
+  ];
+  const rows = [header];
 
-for (const x of list){
-  const a = rosterByLane[String(x.lane)];
-  rows.push([
-    currentGroup,                 // group
-    a?.bib  || "",                // bib
-    a?.name || "",                // name
-    a?.team || "",                // team
-    x.lane || "",                 // lane
-    typeLabel(x.type),            // type
-    x.judgeId || "",              // judgeId
-    x.hhmm || "",                 // time
-    levelLabel(x.level),          // level
-    x.status || "",               // status
-    x.id || "",                   // id
-    x.raceId || raceId || "",     // raceId
-  ]);
-}
+  for (const x of list){
+    const a = rosterByLane[String(x.lane)];
+    rows.push([
+      currentGroup,
+      a?.bib  || "",
+      a?.name || "",
+      a?.team || "",
+      x.lane || "",
+      typeLabel(x.type),
+      x.judgeId || "",
+      x.hhmm || "",
+      levelLabel(x.level),
+      x.status || "",
+      x.id || "",
+      x.raceId || raceId || "",
+    ]);
+  }
 
-  const csv = "\uFEFF" + buildCsv(rows); // ★Excel文字化け対策（UTF-8 BOM）
+  const csv = "\uFEFF" + buildCsv(rows);
   const fn = `racewalk_group${currentGroup}_${new Date().toISOString().slice(0,10)}.csv`;
   downloadTextFile(fn, csv, "text/csv;charset=utf-8");
 }
 
 function openPrint(){
-  // ★役割で絞り込まれていない「全履歴」を印刷
   const list = (itemsAll||[])
     .filter(x => x.status !== "cancelled")
     .sort((a,b)=>(a.tsMs||0)-(b.tsMs||0));
@@ -262,34 +251,32 @@ function wsUrl() {
 }
 
 // ===== state =====
-const state = {}; // ★追加：UI用（並び替え等）を入れる
+const state = {};
 let socket = null;
 
-let role = "judge";     // judge/recorder/chief/board/host/chiefjudge
-let judgeId = null;     // J1..J5 / CJ
-let chiefPin = "";      // 1234
+let role = "judge";
+let judgeId = null;
+let roleToken = "";
 
 let raceId = "";
 let currentGroup = 1;
 
-let rosterByLane = {};  // lane -> athlete
+let rosterByLane = {};
 
-// ★重要：全履歴(itemsAll)を破壊しない。画面表示用(items)は役割で絞り込み。
-let itemsAll = [];      // all infractions list (global truth)
-let items = [];         // view list (filtered by role)
+let itemsAll = [];
+let items = [];
 
 let infoLine = "接続中...";
 
-// UI state (do not trigger full render on input)
 let uiLane = "";
 let hostSelectedGroup = 1;
-let hostRosterCache = []; // [{lane,bib,name,team}]
+let hostRosterCache = [];
 let hostForm = { lane: "", bib: "", name: "", team: "" };
 
 // ===== ws =====
 function connect() {
   infoLine = `接続中... ${wsUrl()}`;
-  render(); // 初期はOK
+  render();
 
   socket = new WebSocket(wsUrl());
 
@@ -357,8 +344,25 @@ function connect() {
       return;
     }
 
+    if (msg.op === "TOKENS_DATA") {
+      state.tokensData = msg.tokens || {};
+      render();
+      return;
+    }
+
     if (msg.op === "OK") {
       console.log("OK:", msg);
+
+      if (msg.kind === "REGEN_TOKEN") {
+        alert(`${msg.target} のトークンを再発行しました`);
+        send({ op: "GET_TOKENS" });
+      }
+
+      if (msg.kind === "REGEN_ALL_TOKENS") {
+        alert("全トークンを再発行しました");
+        send({ op: "GET_TOKENS" });
+      }
+
       return;
     }
   };
@@ -377,13 +381,10 @@ function send(obj) {
   socket.send(JSON.stringify(obj));
 }
 
-let rolePin = "";
-
 function hello() {
-  send({ op: "HELLO", role, judgeId, pin: rolePin });
+  send({ op: "HELLO", role, judgeId, token: roleToken });
 }
 
-// ★破壊しないフィルタ：表示用の items を生成する
 function buildViewItems(src) {
   let out = Array.isArray(src) ? src.slice() : [];
 
@@ -394,12 +395,10 @@ function buildViewItems(src) {
     );
   }
 
-  // 記録主任：確定済のみ表示（pendingは記録係で確認）
   if (role === "chief") {
     out = out.filter((x) => x.status === "confirmed");
   }
 
-  // 審判：表示は自分の履歴だけ（ただし itemsAll は保持している）
   if (role === "judge" && judgeId) {
     out = out.filter((x) => x.judgeId === judgeId);
   }
@@ -416,9 +415,7 @@ function athleteForLane(lane) {
   return rosterByLane[String(lane)];
 }
 
-// ===== 送信済み判定（同一審判のみ） =====
 function alreadySentByMe(lane, type, level) {
-  // judgeId が無い場合は従来どおり全体で見る（保険）
   const jid = judgeId || null;
   return (itemsAll || []).some(
     (x) =>
@@ -430,7 +427,6 @@ function alreadySentByMe(lane, type, level) {
   );
 }
 
-// ===== 自分がそのレーンに「警告」を出しているか（同一審判のみロック） =====
 function myWarningExistsLane(lane) {
   const jid = judgeId || null;
   return (itemsAll || []).some(
@@ -442,7 +438,6 @@ function myWarningExistsLane(lane) {
   );
 }
 
-// 互換で残す（他用途が出た時用）：そのレーンに警告が1つでもあるか（全審判）
 function warningExistsLaneAny(lane) {
   return (itemsAll || []).some(
     (x) =>
@@ -452,7 +447,19 @@ function warningExistsLaneAny(lane) {
   );
 }
 
-// ===== views =====
+function currentHostLinksHtml() {
+  const t = encodeURIComponent(roleToken || "");
+  return `
+<div class="nav">
+  <a href="#/judge?jid=J1">審判</a>
+  <a href="#/chiefjudge?t=${t}">審判主任</a>
+  <a href="#/recorder?t=${t}">記録</a>
+  <a href="#/chief?t=${t}">記録主任</a>
+  <a href="#/board">掲示板</a>
+</div>
+`;
+}
+
 function shell(title, bodyHtml) {
   return `
     <header>
@@ -463,15 +470,7 @@ function shell(title, bodyHtml) {
         <span class="badge mono">${esc(infoLine)}</span>
       </div>
 
-${role === "host" ? `
-<div class="nav">
-  <a href="#/judge?jid=J1">審判</a>
-  <a href="#/chiefjudge">審判主任</a>
-  <a href="#/recorder">記録</a>
-  <a href="#/chief?pin=1234">記録主任</a>
-  <a href="#/board">掲示板</a>
-</div>
-` : ""}
+${role === "host" ? currentHostLinksHtml() : ""}
 
     </header>
     <main>${bodyHtml}</main>
@@ -506,7 +505,6 @@ function judgeView() {
   const lane = (uiLane || "").trim();
   const athlete = lane ? athleteForLane(lane) : null;
 
-  // ★同一審判がそのレーンに警告を出していたら、そのレーンだけロック
   const laneLocked = !!lane && myWarningExistsLane(lane);
 
   const lossCautionDisabled = laneLocked || !lane || !athlete
@@ -663,7 +661,6 @@ function updateJudgeLiveUI(){
   const lane = (uiLane || "").trim().replace(/^L/i, "");
   const athlete = lane ? athleteForLane(lane) : null;
 
-  // 選手カード更新（renderしない）
   const athleteCard = $("#athleteCard");
   if (athleteCard){
     athleteCard.innerHTML = athlete ? `
@@ -673,14 +670,12 @@ function updateJudgeLiveUI(){
     ` : `<div>未登録レーン（設定係が名簿を登録してください）</div>`;
   }
 
-  // 審判ボタン disabled 更新（renderしない）
   if (p === "/judge" || p === "/"){
     const lossCautionBtn = $("#lossCautionBtn");
     const lossWarnBtn    = $("#lossWarnBtn");
     const bentCautionBtn = $("#bentCautionBtn");
     const bentWarnBtn    = $("#bentWarnBtn");
 
-    // ★同一審判がそのレーンに警告を出していたら、そのレーンだけロック
     const laneLocked = !!lane && myWarningExistsLane(lane);
 
     const lossCautionDisabled = laneLocked || !lane || !athlete
@@ -701,7 +696,6 @@ function updateJudgeLiveUI(){
     if (bentWarnBtn)    bentWarnBtn.disabled    = !!bentWarnDisabled;
   }
 
-  // 審判主任ボタン disabled 更新（renderしない）
   if (p === "/chiefjudge"){
     const dsq1Btn = $("#dsq1Btn");
     const dsq2Btn = $("#dsq2Btn");
@@ -714,19 +708,16 @@ function updateJudgeLiveUI(){
 }
 
 function recorderView(isChief=false){
-
   const list = (items||[])
     .filter(x => x.status !== "cancelled")
     .sort((a,b)=>(b.tsMs||0)-(a.tsMs||0));
 
-  // 見出しの▲▼表示（今の並び替え状態が分かる）
-  const mode = state.topSortMode || "time"; // "time" or "lane"
-  const dir  = state.topSortDir  || "asc";  // "asc" or "desc"
+  const mode = state.topSortMode || "time";
+  const dir  = state.topSortDir  || "asc";
   const arrow = (dir === "asc") ? "▲" : "▼";
   const timeHead = `時刻${mode==="time" ? ` ${arrow}` : ""}`;
   const laneHead = `レーン${mode==="lane" ? ` ${arrow}` : ""}`;
 
-  // ===== 通告（notice）を最上段に分離 =====
   const noticeRows = list
     .filter(x => x.level === "notice")
     .sort((a,b)=>(b.tsMs||0)-(a.tsMs||0))
@@ -750,8 +741,6 @@ function recorderView(isChief=false){
       `;
     }).join("");
 
-
-  // ===== 上段（警告・失格・告知）=====
   const topRows = list
     .filter(x =>
       x.level==="warning" || x.level==="dsq1" || x.level==="dsq2"
@@ -775,7 +764,6 @@ function recorderView(isChief=false){
       const a = rosterByLane[String(x.lane)];
       const who = a ? `（${a.name}）` : "";
 
-      // ★修正：dsq1/dsq2 が「失格」になるように
       const label =
         x.level==="warning" ? "警告" :
         (x.level==="dsq1" || x.level==="dsq2") ? "失格" :
@@ -797,7 +785,6 @@ function recorderView(isChief=false){
       `;
     }).join("");
 
-  // ===== 下段（注意のみ）=====  ※状態欄なし（確定操作は上段で行う）
   const bottomRows = list
     .filter(x => x.level==="caution")
     .map(x=>{
@@ -884,11 +871,8 @@ function recorderView(isChief=false){
     </div>
   </div>
   `);
-
 }
 
-
-// ===== 上段ヘッダクリックで並び替え（1回だけ登録）=====
 state.topSortMode = state.topSortMode || "time";
 state.topSortDir  = state.topSortDir  || "asc";
 
@@ -899,7 +883,7 @@ if (!state._topSortClickBound) {
     const th = e.target.closest("th.clicksort");
     if (!th) return;
 
-    const mode = th.dataset.sort; // "time" or "lane"
+    const mode = th.dataset.sort;
     if (!mode) return;
 
     if (state.topSortMode === mode) {
@@ -931,6 +915,40 @@ function boardView() {
   return shell("掲示板（確定の警告＋失格）", `
     ${cards || `<div class="card">確定データがまだありません</div>`}
   `);
+}
+
+function tokenTableHtml() {
+  const tokens = state.tokensData || {};
+  const rows = [
+    ["judge1", tokens.judge1 || ""],
+    ["judge2", tokens.judge2 || ""],
+    ["judge3", tokens.judge3 || ""],
+    ["judge4", tokens.judge4 || ""],
+    ["judge5", tokens.judge5 || ""],
+    ["chiefjudge", tokens.chiefjudge || ""],
+    ["recorder", tokens.recorder || ""],
+    ["chief", tokens.chief || ""],
+    ["host", tokens.host || ""],
+  ].map(([name, token]) => `
+    <tr>
+      <td>${esc(name)}</td>
+      <td class="mono">${esc(token)}</td>
+      <td><button data-regen="${esc(name)}" class="secondary">再発行</button></td>
+    </tr>
+  `).join("");
+
+  return `
+    <div class="card">
+      <div class="big">現在のトークン</div>
+      <table>
+        <thead><tr><th>役割</th><th>トークン</th><th>操作</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="row" style="margin-top:10px">
+        <button id="regenAllBtn" class="danger">全トークン再発行</button>
+      </div>
+    </div>
+  `;
 }
 
 function hostView() {
@@ -988,6 +1006,7 @@ function hostView() {
         <tbody>${rows}</tbody>
       </table>
     </div>
+
     <div class="card">
       <div class="big">CSVから名簿を読み込み</div>
       <div class="notice" style="margin-top:6px">
@@ -1005,6 +1024,7 @@ function hostView() {
       </div>
     </div>
 
+    ${tokenTableHtml()}
   `);
 }
 
@@ -1012,7 +1032,6 @@ function hostView() {
 function render() {
   const p = routePath();
 
-  // 役割が変わった可能性があるので、表示用 items を毎回同期
   items = buildViewItems(itemsAll);
 
   if (p === "/host") app.innerHTML = hostView();
@@ -1029,21 +1048,17 @@ function render() {
 function bindEvents() {
   const p = routePath();
 
-  // lane input
   const laneInput = $("#laneInput");
   if (laneInput) {
     laneInput.value = uiLane;
     laneInput.addEventListener("input", () => {
-      // 半角数字のみ許可
       const v = laneInput.value.replace(/[^\d]/g, "");
       laneInput.value = v;
       uiLane = v;
-
-      updateJudgeLiveUI();   // ★ここが重要（renderしない）
+      updateJudgeLiveUI();
     });
   }
 
-  // judge buttons
   const lossCautionBtn = $("#lossCautionBtn");
   if (lossCautionBtn) {
     lossCautionBtn.addEventListener("click", () => {
@@ -1104,7 +1119,6 @@ function bindEvents() {
     });
   }
 
-  // ===== chiefjudge buttons =====
   const dsq1Btn = $("#dsq1Btn");
   if (dsq1Btn) {
     dsq1Btn.addEventListener("click", () => {
@@ -1135,7 +1149,6 @@ function bindEvents() {
     });
   }
 
-  // recorder confirm
   document.querySelectorAll("[data-confirm]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const id = btn.getAttribute("data-confirm");
@@ -1143,22 +1156,19 @@ function bindEvents() {
     });
   });
 
-  // CSV / Print
   const csvBtn = $("#csvBtn");
   if (csvBtn) csvBtn.addEventListener("click", () => exportCsv());
   const printBtn = $("#printBtn");
   if (printBtn) printBtn.addEventListener("click", () => openPrint());
 
-  // chief reset
   const resetBtn = $("#resetBtn");
   if (resetBtn) {
     resetBtn.addEventListener("click", () => {
       if (!confirm("ログのみ初期化します（名簿は残ります）。よろしいですか？")) return;
-      send({ op: "RESET", pin: chiefPin || "1234" });
+      send({ op: "RESET" });
     });
   }
 
-  // host
   if (p === "/host") {
     const groupSelect = $("#groupSelect");
     const loadBtn = $("#loadBtn");
@@ -1179,11 +1189,9 @@ function bindEvents() {
 
     async function readCsvFileAsText(file, enc="utf-8"){
       const buf = await file.arrayBuffer();
-      // BOM付きUTF-8もOK
       try {
         return new TextDecoder(enc).decode(buf);
       } catch {
-        // だめならUTF-8で読む
         return new TextDecoder("utf-8").decode(buf);
       }
     }
@@ -1321,6 +1329,23 @@ function bindEvents() {
         render();
       });
     });
+
+    document.querySelectorAll("[data-regen]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const target = btn.getAttribute("data-regen");
+        if (!target) return;
+        if (!confirm(`${target} のトークンを再発行します。よろしいですか？`)) return;
+        send({ op: "REGEN_TOKEN", target });
+      });
+    });
+
+    const regenAllBtn = $("#regenAllBtn");
+    if (regenAllBtn) {
+      regenAllBtn.addEventListener("click", () => {
+        if (!confirm("全トークンを再発行します。既存QRは使えなくなります。よろしいですか？")) return;
+        send({ op: "REGEN_ALL_TOKENS" });
+      });
+    }
   }
 }
 
@@ -1339,14 +1364,16 @@ function hhmmTo12(hhmm) {
 function applyRoute() {
   const p = routePath();
   const q = qs();
-  rolePin = q.get("pin") || "";
-　　console.log("rolePin=", rolePin, "role=", role, "judgeId=", judgeId);
+  roleToken = q.get("t") || "";
+
+  console.log("roleToken=", roleToken, "role=", role, "judgeId=", judgeId);
+
   if (p === "/host") {
     role = "host";
     judgeId = null;
-    chiefPin = "";
     hello();
     send({ op: "LOAD_ROSTER", group: hostSelectedGroup });
+    send({ op: "GET_TOKENS" });
     render();
     return;
   }
@@ -1354,7 +1381,6 @@ function applyRoute() {
   if (p === "/recorder") {
     role = "recorder";
     judgeId = null;
-    chiefPin = "";
     hello();
     render();
     return;
@@ -1363,7 +1389,7 @@ function applyRoute() {
   if (p === "/board") {
     role = "board";
     judgeId = null;
-    chiefPin = "";
+    roleToken = "";
     hello();
     render();
     return;
@@ -1372,7 +1398,6 @@ function applyRoute() {
   if (p === "/chief") {
     role = "chief";
     judgeId = null;
-    chiefPin = q.get("pin") || "1234";
     hello();
     render();
     return;
@@ -1380,8 +1405,7 @@ function applyRoute() {
 
   if (p === "/chiefjudge") {
     role = "chiefjudge";
-    judgeId = "CJ"; // ここが重要：サーバ側フィルタと一致させる
-    chiefPin = "";
+    judgeId = "CJ";
     hello();
     render();
     return;
@@ -1389,10 +1413,9 @@ function applyRoute() {
 
   role = "judge";
   judgeId = q.get("jid") || null;
-  chiefPin = "";
 
   if (!judgeId) {
-    alert("審判URLに jid=J1 のようなIDが必要です。例: #/judge?jid=J1");
+    alert("審判URLに jid=J1 のようなIDが必要です。例: #/judge?jid=J1&t=xxxxx");
     judgeId = "J1";
   }
   hello();
