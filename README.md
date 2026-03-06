@@ -1,4 +1,4 @@
-# racewalk-system
+## racewalk-system
 競歩の審判システム
 シンプルな競歩システム最小版です。
 
