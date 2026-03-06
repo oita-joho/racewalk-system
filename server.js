@@ -11,7 +11,7 @@ const WebSocket = require("ws");
 // =====================================================
 // Config / Files
 // =====================================================
-const PORT = 8080;
+const PORT = process.env.PORT || 8080;
 const DATA_DIR = path.join(__dirname, "data");
 const ROSTER_FILE = (g) => path.join(DATA_DIR, `roster_g${g}.json`);
 const PINS_FILE = path.join(DATA_DIR, "pins.json");
