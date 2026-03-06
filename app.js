@@ -1,5 +1,7 @@
 const qs = new URLSearchParams(location.search);
-const mode = qs.get("mode") || "judge";
+const mode = document.body.dataset.mode || qs.get("mode") || "judge";
+const pinFromUrl = qs.get("pin") || "";
+const serverFromUrl = qs.get("server") || "";
 const pinFromUrl = qs.get("pin") || "";
 const serverFromUrl = qs.get("server") || "";
 
