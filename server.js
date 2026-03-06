@@ -1,6 +1,7 @@
 // server.js  (FULL REPLACE)
 // Node: express + ws
 // Run: node server.js
+
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
@@ -50,40 +51,86 @@ function localIPv4Candidates() {
 }
 
 // =====================================================
-// PIN auth (pins.json)
+// Token auth (tokens.json)
 // =====================================================
-function readPins() {
-  if (!fs.existsSync(PINS_FILE)) return {};
+function makeToken(len = 16) {
+  return crypto.randomBytes(24).toString("base64url").slice(0, len);
+}
+
+function defaultTokens() {
+  return {
+    judge1: makeToken(),
+    judge2: makeToken(),
+    judge3: makeToken(),
+    judge4: makeToken(),
+    judge5: makeToken(),
+    chiefjudge: makeToken(),
+    recorder: makeToken(),
+    chief: makeToken(),
+    host: makeToken(),
+  };
+}
+
+function loadTokens() {
+  if (!fs.existsSync(TOKENS_FILE)) {
+    const init = defaultTokens();
+    fs.writeFileSync(TOKENS_FILE, JSON.stringify(init, null, 2), "utf8");
+    return init;
+  }
+
   try {
-    const v = JSON.parse(fs.readFileSync(PINS_FILE, "utf8"));
-    return v && typeof v === "object" ? v : {};
+    const obj = JSON.parse(fs.readFileSync(TOKENS_FILE, "utf8"));
+    const merged = { ...defaultTokens(), ...obj };
+    fs.writeFileSync(TOKENS_FILE, JSON.stringify(merged, null, 2), "utf8");
+    return merged;
   } catch {
-    return {};
+    const init = defaultTokens();
+    fs.writeFileSync(TOKENS_FILE, JSON.stringify(init, null, 2), "utf8");
+    return init;
   }
 }
 
-function pinOkFor(role, judgeId, pin) {
-  const pins = readPins();
-  const p = String(pin || "");
+function saveTokens(tokens) {
+  fs.writeFileSync(TOKENS_FILE, JSON.stringify(tokens, null, 2), "utf8");
+}
+
+function judgeIdToRole(judgeId) {
+  const s = String(judgeId || "").trim().toUpperCase();
+  if (s === "J1") return "judge1";
+  if (s === "J2") return "judge2";
+  if (s === "J3") return "judge3";
+  if (s === "J4") return "judge4";
+  if (s === "J5") return "judge5";
+  return null;
+}
+
+function tokenOkFor(role, judgeId, token) {
+  const t = String(token || "").trim();
+  if (!t) return false;
+
+  // board は公開運用
+  if (role === "board") return true;
+
+  const tokens = loadTokens();
 
   if (role === "judge") {
-    if (!judgeId) return false;
-    return p && pins[String(judgeId)] === p; // J1..J5
+    const key = judgeIdToRole(judgeId);
+    return !!(key && tokens[key] === t);
   }
-  if (role === "chiefjudge") return p && pins["CJ"] === p;
-  if (role === "recorder") return p && pins["REC"] === p;
-  if (role === "chief") return p && pins["CHIEF"] === p;
-  if (role === "board") return p && pins["BOARD"] === p;
-  if (role === "host") return p && pins["HOST"] === p;
+
+  if (role === "chiefjudge") return tokens.chiefjudge === t;
+  if (role === "recorder") return tokens.recorder === t;
+  if (role === "chief") return tokens.chief === t;
+  if (role === "host") return tokens.host === t;
 
   return false;
 }
 
 function requiredRole(op) {
   // opごとに許可するroleをサーバ側で固定
-  if (op === "LOAD_ROSTER" || op === "SAVE_ROSTER" || op === "CLEAR_ROSTER" || op === "APPLY_GROUP") return ["host"];
-  if (op === "CONFIRM") return ["recorder"];          // 記録係だけ
-  if (op === "RESET") return ["chief"];               // 記録主任だけ
+  if (op === "LOAD_ROSTER" || op === "SAVE_ROSTER" || op === "CLEAR_ROSTER" || op === "APPLY_GROUP" || op === "GET_TOKENS" || op === "REGEN_TOKEN" || op === "REGEN_ALL_TOKENS") return ["host"];
+  if (op === "CONFIRM") return ["recorder"];     // 記録係だけ
+  if (op === "RESET") return ["chief"];          // 記録主任だけ
   if (op === "NEW_CAUTION" || op === "NEW_WARNING") return ["judge"];
   if (op === "NEW_CHIEF") return ["chiefjudge"];
   return null; // HELLO / その他
@@ -233,7 +280,7 @@ function snapshotFor(role, judgeId) {
     // 記録主任：確定済のみ
     items = items.filter((x) => x.status === "confirmed");
   } else {
-    // recorder / host：全部（recorderは pending を確定する必要がある）
+    // recorder / host：全部
   }
 
   items.sort((a, b) => (b.tsMs || 0) - (a.tsMs || 0));
@@ -255,6 +302,7 @@ app.use(express.static(path.join(__dirname, "public")));
 app.get("/", (req, res) => {
   res.send("racewalk server running");
 });
+
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, path: "/ws" });
 
@@ -263,6 +311,7 @@ wss.on("connection", (ws) => {
 
   let role = "judge";
   let judgeId = null;
+  let authed = false;
 
   ws.on("message", (buf) => {
     let msg;
@@ -275,25 +324,33 @@ wss.on("connection", (ws) => {
     const op = msg.op;
 
     // -----------------------------
-    // HELLO (PIN認証)
+    // HELLO (token認証)
     // -----------------------------
     if (op === "HELLO") {
       const reqRole = String(msg.role || "judge");
       const reqJudgeId = msg.judgeId ? String(msg.judgeId) : null;
-      const pin = String(msg.pin || "");
-　　　console.log("HELLO", { reqRole, reqJudgeId, pin });　
-      if (!pinOkFor(reqRole, reqJudgeId, pin)) {
-  console.log("PIN NG", { reqRole, reqJudgeId, pin, pins: readPins() });
-  send(ws, { op: "REJECT", reason: "PINが違うか、この役割の権限がありません" });
-  try { ws.close(); } catch {}
-  return;
-}
+      const token = String(msg.token || msg.t || "");
+
+      console.log("HELLO", { reqRole, reqJudgeId, token });
+
+      if (!tokenOkFor(reqRole, reqJudgeId, token)) {
+        console.log("TOKEN NG", { reqRole, reqJudgeId, token });
+        send(ws, { op: "REJECT", reason: "tokenが違うか、この役割の権限がありません" });
+        try { ws.close(); } catch {}
+        return;
+      }
 
       role = reqRole;
       judgeId = reqJudgeId;
+      authed = true;
 
       send(ws, snapshotFor(role, judgeId));
       return;
+    }
+
+    // HELLO前は拒否
+    if (!authed) {
+      return reject(ws, "最初にHELLOしてください");
     }
 
     // -----------------------------
@@ -369,6 +426,48 @@ wss.on("connection", (ws) => {
       return;
     }
 
+    if (op === "GET_TOKENS") {
+      const tokens = loadTokens();
+      send(ws, { op: "TOKENS_DATA", tokens });
+      return;
+    }
+
+    if (op === "REGEN_TOKEN") {
+      const target = String(msg.target || "");
+      const allowedTargets = [
+        "judge1", "judge2", "judge3", "judge4", "judge5",
+        "chiefjudge", "recorder", "chief", "host",
+      ];
+
+      if (!allowedTargets.includes(target)) {
+        return reject(ws, "targetが不正です");
+      }
+
+      const tokens = loadTokens();
+      tokens[target] = makeToken();
+      saveTokens(tokens);
+
+      send(ws, {
+        op: "OK",
+        kind: "REGEN_TOKEN",
+        target,
+        token: tokens[target],
+      });
+      return;
+    }
+
+    if (op === "REGEN_ALL_TOKENS") {
+      const tokens = defaultTokens();
+      saveTokens(tokens);
+
+      send(ws, {
+        op: "OK",
+        kind: "REGEN_ALL_TOKENS",
+        tokens,
+      });
+      return;
+    }
+
     // -----------------------------
     // Recorder actions
     // -----------------------------
@@ -388,12 +487,8 @@ wss.on("connection", (ws) => {
     // Chief actions（ログ初期化）
     // -----------------------------
     if (op === "RESET") {
-      // role=chief しか来ない（上の制限で弾く）
-      // PINも必須：CHIEFのPINでないと拒否
-      const pin = String(msg.pin || "");
-      if (!pinOkFor("chief", null, pin)) return reject(ws, "PINが違います");
-
       resetLogKeepRoster();
+
       broadcast({
         op: "EVENT",
         kind: "RESET",
@@ -408,7 +503,6 @@ wss.on("connection", (ws) => {
     // Judge actions（審判：注意/警告）
     // =================================================
     if (op === "NEW_CAUTION" || op === "NEW_WARNING") {
-      // role=judge しか来ない（上の制限で弾く）
       const lane = String(msg.lane || "").trim();
       const type = msg.type === "loss" ? "loss" : "bent";
 
@@ -420,7 +514,7 @@ wss.on("connection", (ws) => {
       if (!ensureLaneRegistered(lane)) return reject(ws, "そのレーンは未登録です（設定係に確認）");
       if (!jId) return reject(ws, "審判IDが不明です");
 
-      // ルール2（修正）：同一審判が「そのレーン」に警告を出していたら、そのレーンには以後 注意/警告を出せない
+      // ルール2：同一審判がそのレーンに警告済なら以後 注意/警告不可
       const lk = lockKey(state.raceId, jId, lane);
       if (state.judgeLaneWarnLock[lk]) {
         return reject(ws, "この審判はこの競技者に既に警告を出しているため、以後は注意・警告を出せません");
@@ -429,14 +523,12 @@ wss.on("connection", (ws) => {
       const level = op === "NEW_CAUTION" ? "caution" : "warning";
 
       // ルール1：同一審判は同一(lane/type/level)を2回出せない
-      // pending/confirmed が1つでもあれば不可
       const kThis = keyOf(state.raceId, jId, lane, type, level);
       if (state.activeKeyToId[kThis]) {
         return reject(ws, "同一審判は同一競技者に同じ注意・警告を2回出せません");
       }
 
-      // 注意は即確定（記録が確定を押さない運用でも、主任に注意が出る）
-      // 警告は pending（記録係が確定）
+      // 注意は即確定、警告はpending
       const status = level === "caution" ? "confirmed" : "pending";
 
       const inf = {
@@ -455,7 +547,7 @@ wss.on("connection", (ws) => {
       state.byId[inf.id] = inf;
       state.activeKeyToId[kThis] = inf.id;
 
-      // 警告は pending の時点で「そのレーン」をロック
+      // 警告は pending の時点でロック
       if (level === "warning") {
         state.judgeLaneWarnLock[lk] = true;
       }
@@ -469,7 +561,6 @@ wss.on("connection", (ws) => {
     //  - pendingで作成 → 記録が CONFIRM
     // =================================================
     if (op === "NEW_CHIEF") {
-      // role=chiefjudge しか来ない
       const lane = String(msg.lane || "").trim();
       const ctype =
         msg.type === "dsq1" ? "dsq1" :
@@ -508,92 +599,23 @@ wss.on("connection", (ws) => {
 // =====================================================
 server.listen(PORT, "0.0.0.0", () => {
   const ips = localIPv4Candidates();
+  const tokens = loadTokens();
+
   console.log(`Racewalk Web Host running: http://0.0.0.0:${PORT}`);
+
   if (ips.length) {
-    console.log(`Try on phone: http://${ips[0]}:${PORT}/#/judge?jid=J1&pin=____`);
-    console.log(`ChiefJudge:   http://${ips[0]}:${PORT}/#/chiefjudge?pin=____`);
-    console.log(`Recorder:     http://${ips[0]}:${PORT}/#/recorder?pin=____`);
-    console.log(`Chief(Reset): http://${ips[0]}:${PORT}/#/chief?pin=____`);
-    console.log(`Board:        http://${ips[0]}:${PORT}/#/board?pin=____`);
-    console.log(`Host(PC):     http://${ips[0]}:${PORT}/#/host?pin=____`);
+    const ip = ips[0];
+    console.log(`Judge1:       http://${ip}:${PORT}/#/judge?jid=J1&t=${tokens.judge1}`);
+    console.log(`Judge2:       http://${ip}:${PORT}/#/judge?jid=J2&t=${tokens.judge2}`);
+    console.log(`Judge3:       http://${ip}:${PORT}/#/judge?jid=J3&t=${tokens.judge3}`);
+    console.log(`Judge4:       http://${ip}:${PORT}/#/judge?jid=J4&t=${tokens.judge4}`);
+    console.log(`Judge5:       http://${ip}:${PORT}/#/judge?jid=J5&t=${tokens.judge5}`);
+    console.log(`ChiefJudge:   http://${ip}:${PORT}/#/chiefjudge?t=${tokens.chiefjudge}`);
+    console.log(`Recorder:     http://${ip}:${PORT}/#/recorder?t=${tokens.recorder}`);
+    console.log(`Chief(Reset): http://${ip}:${PORT}/#/chief?t=${tokens.chief}`);
+    console.log(`Board:        http://${ip}:${PORT}/#/board`);
+    console.log(`Host(PC):     http://${ip}:${PORT}/#/host?t=${tokens.host}`);
   }
+
   console.log(`WS: ws://<PC-IP>:${PORT}/ws`);
 });
-
-function makeToken(len = 16) {
-  return crypto.randomBytes(24).toString("base64url").slice(0, len);
-}
-
-function defaultTokens() {
-  return {
-    judge1: makeToken(),
-    judge2: makeToken(),
-    judge3: makeToken(),
-    judge4: makeToken(),
-    judge5: makeToken(),
-    chiefjudge: makeToken(),
-    recorder: makeToken(),
-    chief: makeToken(),
-    host: makeToken()
-  };
-}
-
-function loadTokens() {
-  if (!fs.existsSync(TOKENS_FILE)) {
-    const init = defaultTokens();
-    fs.writeFileSync(TOKENS_FILE, JSON.stringify(init, null, 2), "utf8");
-    return init;
-  }
-
-  try {
-    const obj = JSON.parse(fs.readFileSync(TOKENS_FILE, "utf8"));
-    return { ...defaultTokens(), ...obj };
-  } catch (e) {
-    const init = defaultTokens();
-    fs.writeFileSync(TOKENS_FILE, JSON.stringify(init, null, 2), "utf8");
-    return init;
-  }
-}
-
-function saveTokens(tokens) {
-  fs.writeFileSync(TOKENS_FILE, JSON.stringify(tokens, null, 2), "utf8");
-}
-
-function roleFromJudgeNo(judgeNo) {
-  const n = parseInt(judgeNo, 10);
-  if (![1, 2, 3, 4, 5].includes(n)) return null;
-  return `judge${n}`;
-}
-
-function verifyRoleToken(role, token) {
-  if (!role || !token) return false;
-  const tokens = loadTokens();
-  return tokens[role] && tokens[role] === token;
-}
-
-function getRoleFromToken(token) {
-  if (!token) return null;
-  const tokens = loadTokens();
-
-  for (const [role, value] of Object.entries(tokens)) {
-    if (value === token) return role;
-  }
-  return null;
-}
-
-function requireTokenByRole(roleGetter) {
-  return (req, res, next) => {
-    const token =
-      String(req.query.t || req.body?.t || req.headers["x-access-token"] || "");
-
-    const role = roleGetter(req);
-
-    if (!verifyRoleToken(role, token)) {
-      return res.status(403).json({ ok: false, error: "forbidden" });
-    }
-
-    req.accessRole = role;
-    req.accessToken = token;
-    next();
-  };
-}
