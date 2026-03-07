@@ -359,7 +359,7 @@ let uiLane = "";
 let hostSelectedGroup = 1;
 let hostRosterCache = [];
 let hostForm = { lane: "", bib: "", name: "", team: "" };
-
+let hostDirty = false;
 let serverClockOffset = 0;
 
 // ===== time sync =====
@@ -1318,11 +1318,13 @@ function bindEvents() {
       }
 
       hostRosterCache = roster;
-      alert(`CSVを読み込みました：${roster.length}名（グループ${hostSelectedGroup}に反映しました）`);
-      render();
+      hostDirty = true;
+alert(`CSVを読み込みました：${roster.length}名（グループ${hostSelectedGroup}に反映しました）`);
+render();
 
       if (doSave){
         send({ op: "SAVE_ROSTER", group: hostSelectedGroup, roster: hostRosterCache });
+        hostDirty = false;
         alert(`グループ${hostSelectedGroup} を保存しました`);
       }
     }
@@ -1344,6 +1346,7 @@ function bindEvents() {
     if (groupSelect) {
       groupSelect.addEventListener("change", () => {
         hostSelectedGroup = parseInt(groupSelect.value, 10) || 1;
+        send({ op: "LOAD_ROSTER", group: hostSelectedGroup });
       });
     }
 
@@ -1372,18 +1375,36 @@ function bindEvents() {
         alert(`グループ${hostSelectedGroup} を保存しました`);
       });
     }
-
-    if (applyBtn) {
-      applyBtn.addEventListener("click", () => {
-        if (!confirm(`グループ${hostSelectedGroup} を開始します（名簿反映＋ログ初期化）。よろしいですか？`)) return;
-        send({ op: "APPLY_GROUP", group: hostSelectedGroup });
-      });
+if (applyBtn) {
+  applyBtn.addEventListener("click", () => {
+    if (!hostRosterCache.length) {
+      alert("名簿が0件です。読み込みまたは保存を確認してください。");
+      return;
     }
+
+    const hasInvalid = hostRosterCache.some(a =>
+      !String(a.lane || "").trim() || !String(a.name || "").trim()
+    );
+    if (hasInvalid) {
+      alert("レーンまたは氏名が空の行があります。確認してください。");
+      return;
+    }
+
+    if (hostDirty) {
+      const go = confirm("未保存の変更があります。保存せずに開始しますか？");
+      if (!go) return;
+    }
+
+    if (!confirm(`グループ${hostSelectedGroup} を開始します（名簿反映＋ログ初期化）。よろしいですか？`)) return;
+    send({ op: "APPLY_GROUP", group: hostSelectedGroup });
+  });
+}
 
     if (clearBtn) {
       clearBtn.addEventListener("click", () => {
         if (!confirm(`グループ${hostSelectedGroup} の名簿を全消去します。よろしいですか？`)) return;
         hostRosterCache = [];
+        hostDirty = true;
         send({ op: "CLEAR_ROSTER", group: hostSelectedGroup });
         render();
       });
@@ -1405,7 +1426,7 @@ function bindEvents() {
         const idx = hostRosterCache.findIndex((x) => String(x.lane) === lane);
         if (idx >= 0) hostRosterCache[idx] = obj;
         else hostRosterCache.push(obj);
-
+        hostDirty = true;
         hostForm = { lane: "", bib: "", name: "", team: "" };
         render();
       });
@@ -1430,6 +1451,7 @@ function bindEvents() {
       btn.addEventListener("click", () => {
         const lane = btn.getAttribute("data-del");
         hostRosterCache = hostRosterCache.filter((x) => String(x.lane) !== String(lane));
+        hostDirty = true;
         render();
       });
     });
@@ -1604,7 +1626,12 @@ function applyRoute() {
 }
 
 window.addEventListener("hashchange", () => applyRoute());
-
+window.addEventListener("beforeunload", (e) => {
+  if (role === "host" && hostDirty) {
+    e.preventDefault();
+    e.returnValue = "";
+  }
+});
 // init
 syncServerClock();
 setInterval(syncServerClock, 60000);
