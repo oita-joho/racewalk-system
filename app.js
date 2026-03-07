@@ -453,12 +453,13 @@ function connect() {
       return;
     }
 
-    //if (msg.op === "TOKENS_DATA") {
-    //  state.tokensData = msg.tokens || {};
-    //  render();
-    //  return;
-    //}
-TOKENS_DATA { judge1: "...", judge2: "...", ... }
+    if (msg.op === "TOKENS_DATA") {
+      console.log("TOKENS_DATA", msg.tokens);
+      state.tokensData = msg.tokens || {};
+      render();
+      return;
+    }
+    
     if (msg.op === "OK") {
       console.log("OK:", msg);
 
