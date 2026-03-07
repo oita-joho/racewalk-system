@@ -382,7 +382,14 @@ function connect() {
 
   socket = new WebSocket(wsUrl());
 
-  socket.onopen = () => hello();
+  socket.onopen = () => {
+  hello();
+
+  if (role === "host") {
+    send({ op: "LOAD_ROSTER", group: hostSelectedGroup });
+    send({ op: "GET_TOKENS" });
+  }
+};
 
   socket.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
@@ -1536,14 +1543,18 @@ function applyRoute() {
   roleToken = q.get("t") || "";
 
   if (p === "/host") {
-    role = "host";
-    judgeId = null;
+  role = "host";
+  judgeId = null;
+  render();
+
+  if (socket && socket.readyState === 1) {
     hello();
     send({ op: "LOAD_ROSTER", group: hostSelectedGroup });
     send({ op: "GET_TOKENS" });
-    render();
-    return;
   }
+
+  return;
+}
 
   if (p === "/recorder") {
     role = "recorder";
