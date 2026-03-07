@@ -9,6 +9,7 @@ const crypto = require("crypto");
 const express = require("express");
 const http = require("http");
 const WebSocket = require("ws");
+let serverClockOffset = 0;
 
 // =====================================================
 // Config / Files
