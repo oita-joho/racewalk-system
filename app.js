@@ -1,4 +1,4 @@
-// public/app.js (FULL REPLACE)
+// app.js (FULL REPLACE)
 
 // ===== util =====
 const $ = (sel) => document.querySelector(sel);
@@ -14,7 +14,7 @@ function esc(s) {
   }[m]));
 }
 
-// ===== CSV parse (simple but handles quotes) =====
+// ===== CSV parse =====
 function parseCsv(text){
   const rows = [];
   let row = [];
@@ -235,6 +235,7 @@ function openPrint(){
   w.document.close();
 }
 
+// ===== route / ws =====
 function routePath() {
   const h = location.hash || "#/";
   const idx = h.indexOf("?");
@@ -247,7 +248,85 @@ function qs() {
   return new URLSearchParams(q);
 }
 function wsUrl() {
-  return "wss://racewalk-system.onrender.com/ws";
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${location.host}/ws`;
+}
+
+// ===== QR helpers =====
+function appBaseUrl() {
+  return location.origin;
+}
+
+function qrImgUrl(text) {
+  return "https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=" + encodeURIComponent(text);
+}
+
+function buildRoleUrls() {
+  const base = appBaseUrl();
+  const tokens = state.tokensData || {};
+
+  return [
+    { key: "judge1", label: "審判1", url: `${base}/#/judge?jid=J1&t=${encodeURIComponent(tokens.judge1 || "")}` },
+    { key: "judge2", label: "審判2", url: `${base}/#/judge?jid=J2&t=${encodeURIComponent(tokens.judge2 || "")}` },
+    { key: "judge3", label: "審判3", url: `${base}/#/judge?jid=J3&t=${encodeURIComponent(tokens.judge3 || "")}` },
+    { key: "judge4", label: "審判4", url: `${base}/#/judge?jid=J4&t=${encodeURIComponent(tokens.judge4 || "")}` },
+    { key: "judge5", label: "審判5", url: `${base}/#/judge?jid=J5&t=${encodeURIComponent(tokens.judge5 || "")}` },
+    { key: "chiefjudge", label: "審判主任", url: `${base}/#/chiefjudge?t=${encodeURIComponent(tokens.chiefjudge || "")}` },
+    { key: "recorder", label: "記録員", url: `${base}/#/recorder?t=${encodeURIComponent(tokens.recorder || "")}` },
+    { key: "chief", label: "記録主任", url: `${base}/#/chief?t=${encodeURIComponent(tokens.chief || "")}` },
+    { key: "host", label: "設定係", url: `${base}/#/host?t=${encodeURIComponent(tokens.host || "")}` },
+    { key: "board", label: "掲示板", url: `${base}/#/board` },
+  ];
+}
+
+function qrCardsHtml() {
+  const list = buildRoleUrls();
+
+  const cards = list.map((x) => `
+    <div class="card" style="padding:12px">
+      <div class="big" style="margin-bottom:8px">${esc(x.label)}</div>
+      <div style="margin-bottom:10px;text-align:center">
+        <img
+          src="${esc(qrImgUrl(x.url))}"
+          alt="${esc(x.label)} QR"
+          style="width:180px;height:180px;border:1px solid #ccc;border-radius:8px;background:#fff"
+        />
+      </div>
+      <div class="mono" style="font-size:12px;word-break:break-all;margin-bottom:10px">
+        ${esc(x.url)}
+      </div>
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <button class="secondary" data-copy-url="${esc(x.url)}">URLコピー</button>
+        <a href="${esc(x.url)}" target="_blank" rel="noopener">
+          <button type="button">開く</button>
+        </a>
+      </div>
+    </div>
+  `).join("");
+
+  return `
+    <div class="card">
+      <div class="big">QRコード一覧</div>
+      <div class="notice" style="margin-top:6px">
+        各役割のURLをQRコード化しています。<br>
+        トークン再発行後は、古いQRは使えなくなります。
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button id="printQrBtn">QR一覧を印刷</button>
+      </div>
+    </div>
+
+    <div
+      style="
+        display:grid;
+        grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));
+        gap:12px;
+        margin-top:12px;
+      "
+    >
+      ${cards}
+    </div>
+  `;
 }
 
 // ===== state =====
@@ -262,7 +341,6 @@ let raceId = "";
 let currentGroup = 1;
 
 let rosterByLane = {};
-
 let itemsAll = [];
 let items = [];
 
@@ -385,6 +463,7 @@ function hello() {
   send({ op: "HELLO", role, judgeId, token: roleToken });
 }
 
+// ===== filters =====
 function buildViewItems(src) {
   let out = Array.isArray(src) ? src.slice() : [];
 
@@ -438,23 +517,15 @@ function myWarningExistsLane(lane) {
   );
 }
 
-function warningExistsLaneAny(lane) {
-  return (itemsAll || []).some(
-    (x) =>
-      String(x.lane) === String(lane) &&
-      x.level === "warning" &&
-      (x.status === "pending" || x.status === "confirmed")
-  );
-}
-
+// ===== views =====
 function currentHostLinksHtml() {
-  const t = encodeURIComponent(roleToken || "");
+  const tokens = state.tokensData || {};
   return `
 <div class="nav">
-  <a href="#/judge?jid=J1">審判</a>
-  <a href="#/chiefjudge?t=${t}">審判主任</a>
-  <a href="#/recorder?t=${t}">記録</a>
-  <a href="#/chief?t=${t}">記録主任</a>
+  <a href="#/judge?jid=J1&t=${encodeURIComponent(tokens.judge1 || "")}">審判1</a>
+  <a href="#/chiefjudge?t=${encodeURIComponent(tokens.chiefjudge || "")}">審判主任</a>
+  <a href="#/recorder?t=${encodeURIComponent(tokens.recorder || "")}">記録</a>
+  <a href="#/chief?t=${encodeURIComponent(tokens.chief || "")}">記録主任</a>
   <a href="#/board">掲示板</a>
 </div>
 `;
@@ -612,7 +683,7 @@ function chiefJudgeView() {
     <div class="card">
       <div class="notice">
         審判主任は<strong>ロス失格 / ベント失格 / 告知</strong>を送信します。<br>
-        ※送信後は「記録係」が確定ボタンを押して確定します（主任側も pending → confirmed になります）。
+        ※送信後は「記録係」が確定ボタンを押して確定します。
       </div>
     </div>
 
@@ -742,9 +813,7 @@ function recorderView(isChief=false){
     }).join("");
 
   const topRows = list
-    .filter(x =>
-      x.level==="warning" || x.level==="dsq1" || x.level==="dsq2"
-    )
+    .filter(x => x.level==="warning" || x.level==="dsq1" || x.level==="dsq2")
     .sort((a, b) => {
       const mul = (dir === "desc") ? -1 : 1;
       const ta = (a.tsMs ?? 0);
@@ -766,8 +835,7 @@ function recorderView(isChief=false){
 
       const label =
         x.level==="warning" ? "警告" :
-        (x.level==="dsq1" || x.level==="dsq2") ? "失格" :
-        "";
+        (x.level==="dsq1" || x.level==="dsq2") ? "失格" : "";
 
       const action = (x.status==="pending")
         ? `<button data-confirm="${esc(x.id)}">確定</button>`
@@ -862,14 +930,14 @@ function recorderView(isChief=false){
         <tbody>${bottomRows || ""}</tbody>
       </table>
     </div>
-<div class="card">
-    <div class="big">履歴一覧</div>
 
-    <div class="row" style="margin-top:10px">
-      <button id="csvBtn">CSV保存</button>
-      <button id="printBtn" class="secondary">印刷</button>
+    <div class="card">
+      <div class="big">履歴一覧</div>
+      <div class="row" style="margin-top:10px">
+        <button id="csvBtn">CSV保存</button>
+        <button id="printBtn" class="secondary">印刷</button>
+      </div>
     </div>
-  </div>
   `);
 }
 
@@ -1025,10 +1093,11 @@ function hostView() {
     </div>
 
     ${tokenTableHtml()}
+    ${qrCardsHtml()}
   `);
 }
 
-// ===== render & bind =====
+// ===== render =====
 function render() {
   const p = routePath();
 
@@ -1045,6 +1114,7 @@ function render() {
   updateJudgeLiveUI();
 }
 
+// ===== bind =====
 function bindEvents() {
   const p = routePath();
 
@@ -1158,6 +1228,7 @@ function bindEvents() {
 
   const csvBtn = $("#csvBtn");
   if (csvBtn) csvBtn.addEventListener("click", () => exportCsv());
+
   const printBtn = $("#printBtn");
   if (printBtn) printBtn.addEventListener("click", () => openPrint());
 
@@ -1346,6 +1417,80 @@ function bindEvents() {
         send({ op: "REGEN_ALL_TOKENS" });
       });
     }
+
+    document.querySelectorAll("[data-copy-url]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const url = btn.getAttribute("data-copy-url") || "";
+        if (!url) return;
+
+        try {
+          await navigator.clipboard.writeText(url);
+          alert("URLをコピーしました");
+        } catch {
+          prompt("このURLをコピーしてください", url);
+        }
+      });
+    });
+
+    const printQrBtn = $("#printQrBtn");
+    if (printQrBtn) {
+      printQrBtn.addEventListener("click", () => {
+        const list = buildRoleUrls();
+
+        const cardsHtml = list.map((x) => `
+          <div style="width:240px;border:1px solid #999;border-radius:8px;padding:10px;page-break-inside:avoid;">
+            <div style="font-size:20px;font-weight:700;margin-bottom:8px;">${esc(x.label)}</div>
+            <div style="text-align:center;margin-bottom:8px;">
+              <img
+                src="${esc(qrImgUrl(x.url))}"
+                style="width:180px;height:180px;"
+                alt="${esc(x.label)} QR"
+              />
+            </div>
+            <div style="font-size:11px;word-break:break-all;">${esc(x.url)}</div>
+          </div>
+        `).join("");
+
+        const html = `<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>競歩システム QR一覧</title>
+<style>
+  body{
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif;
+    margin:16px;
+  }
+  h1{ font-size:22px; margin:0 0 12px; }
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(2, 1fr);
+    gap:12px;
+  }
+  @media print{
+    body{ margin:10mm; }
+    .grid{ gap:10px; }
+  }
+</style>
+</head>
+<body>
+  <h1>競歩システム QR一覧</h1>
+  <div class="grid">
+    ${cardsHtml}
+  </div>
+<script>
+window.onload = () => window.print();
+</script>
+</body>
+</html>`;
+
+        const w = window.open("", "_blank");
+        w.document.open();
+        w.document.write(html);
+        w.document.close();
+      });
+    }
   }
 }
 
@@ -1365,8 +1510,6 @@ function applyRoute() {
   const p = routePath();
   const q = qs();
   roleToken = q.get("t") || "";
-
-  console.log("roleToken=", roleToken, "role=", role, "judgeId=", judgeId);
 
   if (p === "/host") {
     role = "host";
@@ -1418,6 +1561,7 @@ function applyRoute() {
     alert("審判URLに jid=J1 のようなIDが必要です。例: #/judge?jid=J1&t=xxxxx");
     judgeId = "J1";
   }
+
   hello();
   render();
 }
