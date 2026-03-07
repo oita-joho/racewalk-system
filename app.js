@@ -561,7 +561,7 @@ function rosterDetailsHtml() {
 
   return `
     <div class="card">
-      <details open>
+      <details>
         <summary>競技者一覧（折りたたみ可）</summary>
         <table>
           <thead><tr><th>レーン</th><th>競技者番号</th><th>氏名</th><th>所属</th></tr></thead>
