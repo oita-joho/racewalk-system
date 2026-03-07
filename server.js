@@ -79,13 +79,7 @@ function defaultTokens() {
   };
 }
 
-function loadTokens() {
-  return TOKENS;
-}
 
-function saveTokens(tokens) {
-  // 固定トークンなので保存しない
-}
 
 function judgeIdToRole(judgeId) {
   const s = String(judgeId || "").trim().toUpperCase();
@@ -598,7 +592,13 @@ const TOKENS = {
   chief: "rw_CHIEF_b5P9rN4xD7s2",
   host: "rw_HOST_z8T1mV6qK3c9",
 };
+function loadTokens() {
+  return TOKENS;
+}
 
+function saveTokens(tokens) {
+  // 固定トークンなので保存しない
+}
   console.log(`Racewalk Web Host running: http://0.0.0.0:${PORT}`);
 
   if (ips.length) {
