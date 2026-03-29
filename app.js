@@ -625,7 +625,7 @@ function chiefNoticeExistsLane(lane) {
     (x) =>
       String(x.lane) === String(lane) &&
       x.judgeId === "CJ" &&
-      x.level === "notice" &&
+      (x.type === "notice" || x.level === "notice") &&
       (x.status === "pending" || x.status === "confirmed")
   );
 }
