@@ -462,15 +462,7 @@ if (msg.op === "EVENT") {
   }
 }
 
-      if (kind === "RESET") {
-        itemsAll = [];
-        items = [];
-        raceId = msg.raceId || "";
-        currentGroup = msg.currentGroup || currentGroup;
-        infoLine = `接続OK（raceId=${raceId} / グループ${currentGroup}）`;
-        render();
-        return;
-      }
+     
     }
 
     if (msg.op === "REJECT") {
