@@ -383,101 +383,102 @@ function connect() {
   socket = new WebSocket(wsUrl());
 
   socket.onopen = () => {
-  hello();
+    hello();
 
-  if (role === "host") {
-    send({ op: "LOAD_ROSTER", group: hostSelectedGroup });
-    send({ op: "GET_TOKENS" });
-  }
-};
-
-socket.onmessage = (ev) => {
-  const msg = JSON.parse(ev.data);
-
-  if (msg.op === "SNAPSHOT") {
-    raceId = msg.raceId || "";
-    currentGroup = msg.currentGroup || 1;
-
-    rosterByLane = {};
-    for (const a of (msg.roster || [])) {
-      rosterByLane[String(a.lane)] = a;
+    if (role === "host") {
+      send({ op: "LOAD_ROSTER", group: hostSelectedGroup });
+      send({ op: "GET_TOKENS" });
     }
+  };
 
-    itemsAll = msg.items || [];
-    items = buildViewItems(itemsAll);
+  socket.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
 
-    infoLine = `接続OK（raceId=${raceId} / グループ${currentGroup}）`;
-    render();
-    return;
-  }
+    if (msg.op === "SNAPSHOT") {
+      raceId = msg.raceId || "";
+      currentGroup = msg.currentGroup || 1;
 
-  if (msg.op === "EVENT") {
-    const kind = msg.kind;
-
-    if (kind === "ROSTER") {
       rosterByLane = {};
       for (const a of (msg.roster || [])) {
         rosterByLane[String(a.lane)] = a;
       }
-      render();
-      return;
-    }
 
-    if (kind === "RESET") {
-      itemsAll = [];
-      items = [];
-      raceId = msg.raceId || "";
-      currentGroup = msg.currentGroup || currentGroup;
+      itemsAll = msg.items || [];
+      items = buildViewItems(itemsAll);
+
       infoLine = `接続OK（raceId=${raceId} / グループ${currentGroup}）`;
       render();
       return;
     }
 
-    if (msg.item && msg.item.id) {
-      const inf = msg.item;
+    if (msg.op === "EVENT") {
+      const kind = msg.kind;
 
-      const idx = itemsAll.findIndex((x) => x.id === inf.id);
-      if (idx >= 0) itemsAll[idx] = inf;
-      else itemsAll.unshift(inf);
+      if (kind === "ROSTER") {
+        rosterByLane = {};
+        for (const a of (msg.roster || [])) {
+          rosterByLane[String(a.lane)] = a;
+        }
+        render();
+        return;
+      }
 
-      items = buildViewItems(itemsAll);
+      if (kind === "RESET") {
+        itemsAll = [];
+        items = [];
+        raceId = msg.raceId || "";
+        currentGroup = msg.currentGroup || currentGroup;
+        infoLine = `接続OK（raceId=${raceId} / グループ${currentGroup}）`;
+        render();
+        return;
+      }
+
+      if (msg.item && msg.item.id) {
+        const inf = msg.item;
+
+        const idx = itemsAll.findIndex((x) => x.id === inf.id);
+        if (idx >= 0) itemsAll[idx] = inf;
+        else itemsAll.unshift(inf);
+
+        items = buildViewItems(itemsAll);
+        render();
+        return;
+      }
+    }
+
+    if (msg.op === "REJECT") {
+      alert(msg.reason || "拒否されました");
+      return;
+    }
+
+    if (msg.op === "ROSTER_DATA") {
+      hostSelectedGroup = msg.group || hostSelectedGroup;
+      hostRosterCache = Array.isArray(msg.roster) ? msg.roster : [];
       render();
       return;
     }
-  }
 
-  if (msg.op === "REJECT") {
-    alert(msg.reason || "拒否されました");
-    return;
-  }
-
-  if (msg.op === "ROSTER_DATA") {
-    hostSelectedGroup = msg.group || hostSelectedGroup;
-    hostRosterCache = Array.isArray(msg.roster) ? msg.roster : [];
-    render();
-    return;
-  }
-
-  if (msg.op === "TOKENS_DATA") {
-    state.tokensData = msg.tokens || {};
-    render();
-    return;
-  }
-
-  if (msg.op === "OK") {
-    if (msg.kind === "REGEN_TOKEN") {
-      alert(`${msg.target} のトークンを再発行しました`);
-      send({ op: "GET_TOKENS" });
+    if (msg.op === "TOKENS_DATA") {
+      state.tokensData = msg.tokens || {};
+      render();
+      return;
     }
 
-    if (msg.kind === "REGEN_ALL_TOKENS") {
-      alert("全トークンを再発行しました");
-      send({ op: "GET_TOKENS" });
-    }
+    if (msg.op === "OK") {
+      if (msg.kind === "REGEN_TOKEN") {
+        alert(`${msg.target} のトークンを再発行しました`);
+        send({ op: "GET_TOKENS" });
+      }
 
-    return;
-  }
-};
+      if (msg.kind === "REGEN_ALL_TOKENS") {
+        alert("全トークンを再発行しました");
+        send({ op: "GET_TOKENS" });
+      }
+
+      return;
+    }
+  };
+
   socket.onclose = () => {
     infoLine = "切断…再接続します";
     render();
