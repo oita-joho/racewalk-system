@@ -409,31 +409,42 @@ function connect() {
       return;
     }
 
-    if (msg.op === "EVENT") {
-      const kind = msg.kind;
+if (msg.op === "EVENT") {
+  const kind = msg.kind;
 
-      if (
-  kind === "NEW" ||
-  kind === "UPDATE" ||
-  kind === "CONFIRM" ||
-  kind === "CONFIRMED"
-) {
-        const inf = msg.item;
-        const idx = itemsAll.findIndex((x) => x.id === inf.id);
-        if (idx >= 0) itemsAll[idx] = inf;
-        else itemsAll.unshift(inf);
+  if (kind === "ROSTER") {
+    rosterByLane = {};
+    for (const a of (msg.roster || [])) rosterByLane[String(a.lane)] = a;
+    render();
+    return;
+  }
 
-        items = buildViewItems(itemsAll);
-        render();
-        return;
-      }
+  if (kind === "RESET") {
+    itemsAll = [];
+    items = [];
+    raceId = msg.raceId || "";
+    currentGroup = msg.currentGroup || currentGroup;
+    infoLine = `接続OK（raceId=${raceId} / グループ${currentGroup}）`;
+    render();
+    return;
+  }
 
-      if (kind === "ROSTER") {
-        rosterByLane = {};
-        for (const a of (msg.roster || [])) rosterByLane[String(a.lane)] = a;
-        render();
-        return;
-      }
+  // ★ これが最重要
+  if (msg.item && msg.item.id) {
+    const inf = msg.item;
+
+    const idx = itemsAll.findIndex((x) => x.id === inf.id);
+    if (idx >= 0) {
+      itemsAll[idx] = inf;
+    } else {
+      itemsAll.unshift(inf);
+    }
+
+    items = buildViewItems(itemsAll);
+    render();
+    return;
+  }
+}
 
       if (kind === "RESET") {
         itemsAll = [];
