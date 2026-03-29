@@ -581,7 +581,7 @@ wss.on("connection", (ws) => {
         hhmm: hhmmNow(),
         tsMs: Date.now(),
         judgeId: "CJ",
-        status: "pending",
+        status: ctype === "notice" ? "confirmed" : "pending",
       };
 
       state.byId[inf.id] = inf;
