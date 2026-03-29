@@ -429,6 +429,22 @@ if (msg.op === "EVENT") {
     return;
   }
 
+  if (msg.item && msg.item.id) {
+    const inf = msg.item;
+
+    const idx = itemsAll.findIndex((x) => x.id === inf.id);
+    if (idx >= 0) {
+      itemsAll[idx] = inf;
+    } else {
+      itemsAll.unshift(inf);
+    }
+
+    items = buildViewItems(itemsAll);
+    render();
+    return;
+  }
+}
+
   // ★ これが最重要
   if (msg.item && msg.item.id) {
     const inf = msg.item;
