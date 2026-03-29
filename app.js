@@ -1304,26 +1304,6 @@ function bindEvents() {
       send({ op: "NEW_CAUTION", lane, type: "loss", judgeId });
       uiLane = "";
       render();
-      setTimeout(() => {
-        const inp = $("#laneInput");
-        if (inp) inp.focus();
-        updateJudgeLiveUI();
-      }, 0);
-    });
-  }
-
-  const lossWarnBtn = $("#lossWarnBtn");
-  if (lossWarnBtn) {
-    lossWarnBtn.addEventListener("click", () => {
-      const lane = (uiLane || "").trim();
-      send({ op: "NEW_WARNING", lane, type: "loss", judgeId });
-      uiLane = "";
-      render();
-      setTimeout(() => {
-        const inp = $("#laneInput");
-        if (inp) inp.focus();
-        updateJudgeLiveUI();
-      }, 0);
     });
   }
 
@@ -1334,11 +1314,16 @@ function bindEvents() {
       send({ op: "NEW_CAUTION", lane, type: "bent", judgeId });
       uiLane = "";
       render();
-      setTimeout(() => {
-        const inp = $("#laneInput");
-        if (inp) inp.focus();
-        updateJudgeLiveUI();
-      }, 0);
+    });
+  }
+
+  const lossWarnBtn = $("#lossWarnBtn");
+  if (lossWarnBtn) {
+    lossWarnBtn.addEventListener("click", () => {
+      const lane = (uiLane || "").trim();
+      send({ op: "NEW_WARNING", lane, type: "loss", judgeId });
+      uiLane = "";
+      render();
     });
   }
 
@@ -1349,11 +1334,6 @@ function bindEvents() {
       send({ op: "NEW_WARNING", lane, type: "bent", judgeId });
       uiLane = "";
       render();
-      setTimeout(() => {
-        const inp = $("#laneInput");
-        if (inp) inp.focus();
-        updateJudgeLiveUI();
-      }, 0);
     });
   }
 
@@ -1377,16 +1357,6 @@ function bindEvents() {
     });
   }
 
-  const noticeBtn = $("#noticeBtn");
-  if (noticeBtn) {
-    noticeBtn.addEventListener("click", () => {
-      const lane = (uiLane || "").trim();
-      send({ op: "NEW_CHIEF", lane, type: "notice" });
-      uiLane = "";
-      render();
-    });
-  }
-
   document.querySelectorAll("[data-confirm]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const id = btn.getAttribute("data-confirm");
@@ -1395,10 +1365,10 @@ function bindEvents() {
   });
 
   const csvBtn = $("#csvBtn");
-  if (csvBtn) csvBtn.addEventListener("click", () => exportCsv());
+  if (csvBtn) csvBtn.addEventListener("click", exportCsv);
 
   const printBtn = $("#printBtn");
-  if (printBtn) printBtn.addEventListener("click", () => openPrint());
+  if (printBtn) printBtn.addEventListener("click", openPrint);
 
   const resetBtn = $("#resetBtn");
   if (resetBtn) {
@@ -1425,7 +1395,6 @@ function bindEvents() {
     const csvImportSaveBtn = $("#csvImportSaveBtn");
 
     if (groupSelect) groupSelect.value = String(hostSelectedGroup);
-
     if (hLane) hLane.value = hostForm.lane;
     if (hBib) hBib.value = hostForm.bib;
     if (hName) hName.value = hostForm.name;
@@ -1449,42 +1418,18 @@ function bindEvents() {
     if (hName) hName.addEventListener("input", () => (hostForm.name = hName.value));
     if (hTeam) hTeam.addEventListener("input", () => (hostForm.team = hTeam.value));
 
-    if (loadBtn) loadBtn.addEventListener("click", () => send({ op: "LOAD_ROSTER", group: hostSelectedGroup }));
+    if (loadBtn) loadBtn.addEventListener("click", () => {
+      send({ op: "LOAD_ROSTER", group: hostSelectedGroup });
+    });
 
     if (saveBtn) {
       saveBtn.addEventListener("click", () => {
-        const roster = hostRosterCache.map((a) => ({
-          lane: String(a.lane || "").trim(),
-          bib: String(a.bib || ""),
-          name: String(a.name || "").trim(),
-          team: String(a.team || ""),
-        }));
-        send({ op: "SAVE_ROSTER", group: hostSelectedGroup, roster });
-        alert(`グループ${hostSelectedGroup} を保存しました`);
+        send({ op: "SAVE_ROSTER", group: hostSelectedGroup, roster: hostRosterCache });
       });
     }
 
     if (applyBtn) {
       applyBtn.addEventListener("click", () => {
-        if (!hostRosterCache.length) {
-          alert("名簿が0件です。読み込みまたは保存を確認してください。");
-          return;
-        }
-
-        const hasInvalid = hostRosterCache.some(a =>
-          !String(a.lane || "").trim() || !String(a.name || "").trim()
-        );
-        if (hasInvalid) {
-          alert("レーンまたは氏名が空の行があります。確認してください。");
-          return;
-        }
-
-        if (hostDirty) {
-          const go = confirm("未保存の変更があります。保存せずに開始しますか？");
-          if (!go) return;
-        }
-
-        if (!confirm(`グループ${hostSelectedGroup} を開始します（名簿反映＋ログ初期化）。よろしいですか？`)) return;
         send({ op: "APPLY_GROUP", group: hostSelectedGroup });
       });
     }
@@ -1588,11 +1533,7 @@ function bindEvents() {
         <div style="border:1px solid #999;border-radius:10px;padding:12px;break-inside:avoid;">
           <div style="font-weight:700;margin-bottom:8px;">${esc(x.label)}</div>
           <div style="text-align:center;margin-bottom:8px;">
-            <img
-              src="${esc(qrImgUrl(x.url))}"
-              style="width:180px;height:180px;"
-              alt="${esc(x.label)} QR"
-            />
+            <img src="${esc(qrImgUrl(x.url))}" style="width:180px;height:180px;" alt="${esc(x.label)} QR" />
           </div>
           <div style="font-size:11px;word-break:break-all;">${esc(x.url)}</div>
         </div>
@@ -1605,30 +1546,15 @@ function bindEvents() {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>競歩システム QR一覧</title>
 <style>
-  body{
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif;
-    margin:16px;
-  }
-  h1{ font-size:22px; margin:0 0 12px; }
-  .grid{
-    display:grid;
-    grid-template-columns:repeat(2, 1fr);
-    gap:12px;
-  }
-  @media print{
-    body{ margin:10mm; }
-    .grid{ gap:10px; }
-  }
+  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;margin:16px;}
+  h1{font-size:22px;margin:0 0 12px;}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}
 </style>
 </head>
 <body>
   <h1>競歩システム QR一覧</h1>
-  <div class="grid">
-    ${cardsHtml}
-  </div>
-<script>
-window.onload = () => window.print();
-</script>
+  <div class="grid">${cardsHtml}</div>
+<script>window.onload=()=>window.print();</script>
 </body>
 </html>`;
 
@@ -1639,8 +1565,6 @@ window.onload = () => window.print();
     });
   }
 }
-Need response with citations. Need say recorder blank due bindEvents containing stale chiefnotice/chieflane block or easiest replace whole bindEvents with stable one above. Mention in current app.js there remains stale block in bindEvents on newer file maybe not visible in current snippet? Actually current file snippet still has these bad blocks. Cite. Also maybe recorderView itself is okay. Let's answer precise: replace bindEvents entirely with stable version from earlier, and remove local notice injection; this should restore recorder. Mention if still blank likely due old cached app.js on Render. Include force reload. Need no code citations inside code block. citations in surrounding text.
-
 function hhmmTo12(hhmm) {
   const m = String(hhmm || "").match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return String(hhmm || "");
