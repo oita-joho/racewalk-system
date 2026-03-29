@@ -433,11 +433,8 @@ if (msg.op === "EVENT") {
     const inf = msg.item;
 
     const idx = itemsAll.findIndex((x) => x.id === inf.id);
-    if (idx >= 0) {
-      itemsAll[idx] = inf;
-    } else {
-      itemsAll.unshift(inf);
-    }
+    if (idx >= 0) itemsAll[idx] = inf;
+    else itemsAll.unshift(inf);
 
     items = buildViewItems(itemsAll);
     render();
