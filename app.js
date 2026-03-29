@@ -547,7 +547,7 @@ function myWarningExistsLane(lane) {
   );
 }
 function getChiefJudgeTargets() {
-  const warningByLane = {};
+  const warningCountByLane = {};
   const chiefDsqMap = {};
 
   for (const x of (itemsAll || [])) {
@@ -556,13 +556,17 @@ function getChiefJudgeTargets() {
     const lane = String(x.lane || "").trim();
     if (!lane) continue;
 
-    // 記録係が確定した警告
-    if (x.status === "confirmed" && x.level === "warning") {
-      if (!warningByLane[lane]) warningByLane[lane] = [];
-      warningByLane[lane].push(x);
+    // 記録係が確定した「警告」を数える
+    // warning を基本にしつつ、念のため種別も loss/bent に限定しておく
+    if (
+      x.status === "confirmed" &&
+      x.level === "warning" &&
+      (x.type === "loss" || x.type === "bent")
+    ) {
+      warningCountByLane[lane] = (warningCountByLane[lane] || 0) + 1;
     }
 
-    // 主任自身が出した失格（pending/confirmed どちらでも対象）
+    // 主任自身が出した失格は、3枚相当として扱う
     if (
       x.judgeId === "CJ" &&
       (x.level === "dsq1" || x.level === "dsq2") &&
@@ -572,18 +576,17 @@ function getChiefJudgeTargets() {
     }
   }
 
-  const laneSet = new Set([
-    ...Object.keys(warningByLane),
+  const allLanes = new Set([
+    ...Object.keys(warningCountByLane),
     ...Object.keys(chiefDsqMap)
   ]);
 
   const out = [];
 
-  for (const lane of laneSet) {
-    const confirmedCount = (warningByLane[lane] || []).length;
+  for (const lane of allLanes) {
+    const confirmedCount = warningCountByLane[lane] || 0;
     const chiefDsq = !!chiefDsqMap[lane];
 
-    // 3枚 or 主任失格あり → 告知対象
     if (confirmedCount >= 3 || chiefDsq) {
       const a = athleteForLane(lane) || {};
       out.push({
@@ -600,7 +603,6 @@ function getChiefJudgeTargets() {
   out.sort((a, b) => (parseInt(a.lane, 10) || 0) - (parseInt(b.lane, 10) || 0));
   return out;
 }
-
 // ===== views =====
 function currentHostLinksHtml() {
   const tokens = state.tokensData || {};
