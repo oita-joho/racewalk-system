@@ -756,9 +756,14 @@ function judgeView() {
 }
 
 function chiefJudgeView() {
-   const targets = getChiefJudgeTargets();  // ← これを追加！！
+    const targets = getChiefJudgeTargets();
+
+  const lane = (uiLane || "").trim();
+  const athlete = lane ? athleteForLane(lane) : null;
+  const dsqDisabled = !lane || !athlete;
   const targetRows = targets.map((x) => {
   const noticed = chiefNoticeExistsLane(x.lane);
+    
 
   return `
     <tr>
