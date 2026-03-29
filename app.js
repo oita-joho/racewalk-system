@@ -412,7 +412,12 @@ function connect() {
     if (msg.op === "EVENT") {
       const kind = msg.kind;
 
-      if (kind === "NEW" || kind === "UPDATE") {
+      if (
+  kind === "NEW" ||
+  kind === "UPDATE" ||
+  kind === "CONFIRM" ||
+  kind === "CONFIRMED"
+) {
         const inf = msg.item;
         const idx = itemsAll.findIndex((x) => x.id === inf.id);
         if (idx >= 0) itemsAll[idx] = inf;
