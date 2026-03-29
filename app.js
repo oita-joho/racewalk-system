@@ -756,6 +756,7 @@ function judgeView() {
 }
 
 function chiefJudgeView() {
+   const targets = getChiefJudgeTargets();  // ← これを追加！！
   const targetRows = targets.map((x) => {
   const noticed = chiefNoticeExistsLane(x.lane);
 
