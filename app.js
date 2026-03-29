@@ -1770,3 +1770,6 @@ setInterval(syncServerClock, 60000);
 connect();
 applyRoute();
 render();
+setInterval(() => {
+  fetch("/api/time").catch(() => {});
+}, 5 * 60 * 1000);
