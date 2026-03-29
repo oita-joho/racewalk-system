@@ -603,6 +603,17 @@ function getChiefJudgeTargets() {
   out.sort((a, b) => (parseInt(a.lane, 10) || 0) - (parseInt(b.lane, 10) || 0));
   return out;
 }
+
+function chiefNoticeExistsLane(lane) {
+  return (itemsAll || []).some(
+    (x) =>
+      String(x.lane) === String(lane) &&
+      x.judgeId === "CJ" &&
+      x.level === "notice" &&
+      (x.status === "pending" || x.status === "confirmed")
+  );
+}
+
 // ===== views =====
 function currentHostLinksHtml() {
   const tokens = state.tokensData || {};
@@ -745,13 +756,10 @@ function judgeView() {
 }
 
 function chiefJudgeView() {
-  const targets = getChiefJudgeTargets();
+  const targetRows = targets.map((x) => {
+  const noticed = chiefNoticeExistsLane(x.lane);
 
-  const lane = (uiLane || "").trim();
-  const athlete = lane ? athleteForLane(lane) : null;
-  const dsqDisabled = !lane || !athlete;
-
-  const targetRows = targets.map((x) => `
+  return `
     <tr>
       <td>${esc(x.lane)}</td>
       <td>${esc(x.bib || "")}</td>
@@ -760,10 +768,15 @@ function chiefJudgeView() {
       <td>${esc(String(x.confirmedCount))}</td>
       <td>${x.chiefDsq ? "あり" : ""}</td>
       <td>
-        <button data-chiefnotice="${esc(x.lane)}">告知</button>
+        ${
+          noticed
+            ? `<button disabled>告知済</button>`
+            : `<button data-chiefnotice="${esc(x.lane)}">告知</button>`
+        }
       </td>
     </tr>
-  `).join("");
+  `;
+}).join("");
 
   const histRows = (itemsAll || [])
     .filter((x) => x.judgeId === "CJ")
@@ -1275,22 +1288,37 @@ document.querySelectorAll("[data-chiefnotice]").forEach((btn) => {
       return;
     }
 
-    sendInfraction(lane, "notice", "notice");
+    // すでに告知済みなら何もしない
+    if (chiefNoticeExistsLane(lane)) {
+      return;
+    }
+
+    // サーバへ送信
+    send({ op: "NEW_CHIEF", lane, type: "notice" });
+
+    // 画面にも即時反映
+    const now = Date.now() + serverClockOffset;
+    const d = new Date(now);
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+
+    const localItem = {
+      id: "local_notice_" + now + "_" + lane,
+      raceId,
+      lane,
+      type: "notice",
+      level: "notice",
+      judgeId: "CJ",
+      hhmm: `${hh}:${mm}`,
+      tsMs: now,
+      status: "pending"
+    };
+
+    itemsAll.unshift(localItem);
+    items = buildViewItems(itemsAll);
+    render();
   };
 });
-  const lossCautionBtn = $("#lossCautionBtn");
-  if (lossCautionBtn) {
-    lossCautionBtn.addEventListener("click", () => {
-      const lane = (uiLane || "").trim();
-      send({ op: "NEW_CAUTION", lane, type: "loss", judgeId });
-      uiLane = "";
-      render();
-      setTimeout(() => {
-        const inp = $("#laneInput");
-        if (inp) inp.focus();
-        updateJudgeLiveUI();
-      }, 0);
-    });
   }
 
   const lossWarnBtn = $("#lossWarnBtn");
