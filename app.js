@@ -1285,13 +1285,6 @@ function bindEvents() {
   const p = routePath();
 
   const laneInput = $("#laneInput");
-
-document.querySelectorAll("[data-chieflane]").forEach((btn) => {
-  btn.onclick = () => {
-    setChiefLane(btn.getAttribute("data-chieflane"));
-  };
-});
-  
   if (laneInput) {
     laneInput.value = uiLane;
     laneInput.addEventListener("input", () => {
@@ -1301,46 +1294,37 @@ document.querySelectorAll("[data-chieflane]").forEach((btn) => {
       updateJudgeLiveUI();
     });
   }
-document.querySelectorAll("[data-chiefnotice]").forEach((btn) => {
-  btn.onclick = () => {
-    const lane = String(btn.getAttribute("data-chiefnotice") || "").trim();
-    const athlete = athleteForLane(lane);
-    if (!lane || !athlete) {
-      alert("対象選手が見つかりません");
-      return;
-    }
 
-    // すでに告知済みなら何もしない
-    if (chiefNoticeExistsLane(lane)) {
-      return;
-    }
+  document.querySelectorAll("[data-chiefnotice]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const lane = String(btn.getAttribute("data-chiefnotice") || "").trim();
+      const athlete = athleteForLane(lane);
+      if (!lane || !athlete) {
+        alert("対象選手が見つかりません");
+        return;
+      }
+      if (chiefNoticeExistsLane(lane)) return;
 
-    // サーバへ送信
-    send({ op: "NEW_CHIEF", lane, type: "notice" });
+      btn.disabled = true;
+      btn.textContent = "送信中";
+      send({ op: "NEW_CHIEF", lane, type: "notice" });
+    });
+  });
 
-    // 画面にも即時反映
-    const now = Date.now() + serverClockOffset;
-    const d = new Date(now);
-    const hh = String(d.getHours()).padStart(2, "0");
-    const mm = String(d.getMinutes()).padStart(2, "0");
-
-    const localItem = {
-      id: "local_notice_" + now + "_" + lane,
-      raceId,
-      lane,
-      type: "notice",
-      level: "notice",
-      judgeId: "CJ",
-      hhmm: `${hh}:${mm}`,
-      tsMs: now,
-      status: "pending"
-    };
-
-    itemsAll.unshift(localItem);
-    items = buildViewItems(itemsAll);
-    render();
-  };
-});
+  const lossCautionBtn = $("#lossCautionBtn");
+  if (lossCautionBtn) {
+    lossCautionBtn.addEventListener("click", () => {
+      const lane = (uiLane || "").trim();
+      send({ op: "NEW_CAUTION", lane, type: "loss", judgeId });
+      uiLane = "";
+      render();
+      setTimeout(() => {
+        const inp = $("#laneInput");
+        if (inp) inp.focus();
+        updateJudgeLiveUI();
+      }, 0);
+    });
+  }
 
   const lossWarnBtn = $("#lossWarnBtn");
   if (lossWarnBtn) {
@@ -1451,55 +1435,8 @@ document.querySelectorAll("[data-chiefnotice]").forEach((btn) => {
     const hTeam = $("#hTeam");
     const upsertBtn = $("#upsertBtn");
 
-    const csvFile = $("#csvFile");
-    const csvEnc = $("#csvEnc");
     const csvImportBtn = $("#csvImportBtn");
     const csvImportSaveBtn = $("#csvImportSaveBtn");
-
-    async function readCsvFileAsText(file, enc="utf-8"){
-      const buf = await file.arrayBuffer();
-      try {
-        return new TextDecoder(enc).decode(buf);
-      } catch {
-        return new TextDecoder("utf-8").decode(buf);
-      }
-    }
-
-    async function importCsv(doSave=false){
-      if (!csvFile || !csvFile.files || !csvFile.files[0]){
-        alert("CSVファイルを選択してください");
-        return;
-      }
-      const file = csvFile.files[0];
-      const enc = (csvEnc && csvEnc.value) ? csvEnc.value : "utf-8";
-
-      const text = await readCsvFileAsText(file, enc);
-      const rows = parseCsv(text);
-      const roster = csvRowsToRoster(rows);
-
-      if (!roster.length){
-        alert("有効な行がありませんでした（lane,name 必須 / レーンは半角数字）");
-        return;
-      }
-
-      hostRosterCache = roster;
-      hostDirty = true;
-alert(`CSVを読み込みました：${roster.length}名（グループ${hostSelectedGroup}に反映しました）`);
-render();
-
-      if (doSave){
-        send({ op: "SAVE_ROSTER", group: hostSelectedGroup, roster: hostRosterCache });
-        hostDirty = false;
-        alert(`グループ${hostSelectedGroup} を保存しました`);
-      }
-    }
-
-    if (csvImportBtn){
-      csvImportBtn.addEventListener("click", () => importCsv(false));
-    }
-    if (csvImportSaveBtn){
-      csvImportSaveBtn.addEventListener("click", () => importCsv(true));
-    }
 
     if (groupSelect) groupSelect.value = String(hostSelectedGroup);
 
@@ -1540,57 +1477,60 @@ render();
         alert(`グループ${hostSelectedGroup} を保存しました`);
       });
     }
-if (applyBtn) {
-  applyBtn.addEventListener("click", () => {
-    if (!hostRosterCache.length) {
-      alert("名簿が0件です。読み込みまたは保存を確認してください。");
-      return;
-    }
 
-    const hasInvalid = hostRosterCache.some(a =>
-      !String(a.lane || "").trim() || !String(a.name || "").trim()
-    );
-    if (hasInvalid) {
-      alert("レーンまたは氏名が空の行があります。確認してください。");
-      return;
-    }
+    if (applyBtn) {
+      applyBtn.addEventListener("click", () => {
+        if (!hostRosterCache.length) {
+          alert("名簿が0件です。読み込みまたは保存を確認してください。");
+          return;
+        }
 
-    if (hostDirty) {
-      const go = confirm("未保存の変更があります。保存せずに開始しますか？");
-      if (!go) return;
-    }
+        const hasInvalid = hostRosterCache.some(a =>
+          !String(a.lane || "").trim() || !String(a.name || "").trim()
+        );
+        if (hasInvalid) {
+          alert("レーンまたは氏名が空の行があります。確認してください。");
+          return;
+        }
 
-    if (!confirm(`グループ${hostSelectedGroup} を開始します（名簿反映＋ログ初期化）。よろしいですか？`)) return;
-    send({ op: "APPLY_GROUP", group: hostSelectedGroup });
-  });
-}
+        if (hostDirty) {
+          const go = confirm("未保存の変更があります。保存せずに開始しますか？");
+          if (!go) return;
+        }
+
+        if (!confirm(`グループ${hostSelectedGroup} を開始します（名簿反映＋ログ初期化）。よろしいですか？`)) return;
+        send({ op: "APPLY_GROUP", group: hostSelectedGroup });
+      });
+    }
 
     if (clearBtn) {
       clearBtn.addEventListener("click", () => {
         if (!confirm(`グループ${hostSelectedGroup} の名簿を全消去します。よろしいですか？`)) return;
-        hostRosterCache = [];
-        hostDirty = true;
         send({ op: "CLEAR_ROSTER", group: hostSelectedGroup });
-        render();
       });
     }
 
     if (upsertBtn) {
       upsertBtn.addEventListener("click", () => {
-        const lane = String(hostForm.lane || "").trim();
-        const name = String(hostForm.name || "").trim();
-        if (!lane || !name) return alert("レーンと氏名は必須です");
+        const lane = String(hLane?.value || "").trim();
+        const bib = String(hBib?.value || "");
+        const name = String(hName?.value || "").trim();
+        const team = String(hTeam?.value || "");
 
-        const obj = {
-          lane,
-          bib: String(hostForm.bib || ""),
-          name,
-          team: String(hostForm.team || ""),
-        };
+        if (!lane || !name) {
+          alert("レーンと氏名は必須です");
+          return;
+        }
+        if (!/^\d+$/.test(lane)) {
+          alert("レーンは半角数字です");
+          return;
+        }
 
         const idx = hostRosterCache.findIndex((x) => String(x.lane) === lane);
-        if (idx >= 0) hostRosterCache[idx] = obj;
-        else hostRosterCache.push(obj);
+        const row = { lane, bib, name, team };
+        if (idx >= 0) hostRosterCache[idx] = row;
+        else hostRosterCache.push(row);
+
         hostDirty = true;
         hostForm = { lane: "", bib: "", name: "", team: "" };
         render();
@@ -1600,13 +1540,13 @@ if (applyBtn) {
     document.querySelectorAll("[data-edit]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const lane = btn.getAttribute("data-edit");
-        const a = hostRosterCache.find((x) => String(x.lane) === String(lane));
-        if (!a) return;
+        const row = hostRosterCache.find((x) => String(x.lane) === String(lane));
+        if (!row) return;
         hostForm = {
-          lane: String(a.lane || ""),
-          bib: String(a.bib || ""),
-          name: String(a.name || ""),
-          team: String(a.team || ""),
+          lane: String(row.lane || ""),
+          bib: String(row.bib || ""),
+          name: String(row.name || ""),
+          team: String(row.team || ""),
         };
         render();
       });
@@ -1621,57 +1561,58 @@ if (applyBtn) {
       });
     });
 
-    document.querySelectorAll("[data-regen]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const target = btn.getAttribute("data-regen");
-        if (!target) return;
-        if (!confirm(`${target} のトークンを再発行します。よろしいですか？`)) return;
-        send({ op: "REGEN_TOKEN", target });
-      });
+    if (csvImportBtn) csvImportBtn.addEventListener("click", () => importCsv(false));
+    if (csvImportSaveBtn) csvImportSaveBtn.addEventListener("click", () => importCsv(true));
+  }
+
+  document.querySelectorAll("[data-regen]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const target = btn.getAttribute("data-regen");
+      if (!target) return;
+      if (!confirm(`${target} のトークンを再発行します。よろしいですか？`)) return;
+      send({ op: "REGEN_TOKEN", target });
     });
+  });
 
-    const regenAllBtn = $("#regenAllBtn");
-    if (regenAllBtn) {
-      regenAllBtn.addEventListener("click", () => {
-        if (!confirm("全トークンを再発行します。既存QRは使えなくなります。よろしいですか？")) return;
-        send({ op: "REGEN_ALL_TOKENS" });
-      });
-    }
-
-    document.querySelectorAll("[data-copy-url]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const url = btn.getAttribute("data-copy-url") || "";
-        if (!url) return;
-
-        try {
-          await navigator.clipboard.writeText(url);
-          alert("URLをコピーしました");
-        } catch {
-          prompt("このURLをコピーしてください", url);
-        }
-      });
+  const regenAllBtn = $("#regenAllBtn");
+  if (regenAllBtn) {
+    regenAllBtn.addEventListener("click", () => {
+      if (!confirm("全トークンを再発行します。よろしいですか？")) return;
+      send({ op: "REGEN_ALL_TOKENS" });
     });
+  }
 
-    const printQrBtn = $("#printQrBtn");
-    if (printQrBtn) {
-      printQrBtn.addEventListener("click", () => {
-        const list = buildRoleUrls();
+  document.querySelectorAll("[data-copy-url]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const text = btn.getAttribute("data-copy-url") || "";
+      try {
+        await navigator.clipboard.writeText(text);
+        alert("URLをコピーしました");
+      } catch {
+        alert("コピーできませんでした");
+      }
+    });
+  });
 
-        const cardsHtml = list.map((x) => `
-          <div style="width:240px;border:1px solid #999;border-radius:8px;padding:10px;page-break-inside:avoid;">
-            <div style="font-size:20px;font-weight:700;margin-bottom:8px;">${esc(x.label)}</div>
-            <div style="text-align:center;margin-bottom:8px;">
-              <img
-                src="${esc(qrImgUrl(x.url))}"
-                style="width:180px;height:180px;"
-                alt="${esc(x.label)} QR"
-              />
-            </div>
-            <div style="font-size:11px;word-break:break-all;">${esc(x.url)}</div>
+  const printQrBtn = $("#printQrBtn");
+  if (printQrBtn) {
+    printQrBtn.addEventListener("click", () => {
+      const list = buildRoleUrls();
+      const cardsHtml = list.map((x) => `
+        <div style="border:1px solid #999;border-radius:10px;padding:12px;break-inside:avoid;">
+          <div style="font-weight:700;margin-bottom:8px;">${esc(x.label)}</div>
+          <div style="text-align:center;margin-bottom:8px;">
+            <img
+              src="${esc(qrImgUrl(x.url))}"
+              style="width:180px;height:180px;"
+              alt="${esc(x.label)} QR"
+            />
           </div>
-        `).join("");
+          <div style="font-size:11px;word-break:break-all;">${esc(x.url)}</div>
+        </div>
+      `).join("");
 
-        const html = `<!doctype html>
+      const html = `<!doctype html>
 <html lang="ja">
 <head>
 <meta charset="utf-8">
@@ -1705,14 +1646,14 @@ window.onload = () => window.print();
 </body>
 </html>`;
 
-        const w = window.open("", "_blank");
-        w.document.open();
-        w.document.write(html);
-        w.document.close();
-      });
-    }
+      const w = window.open("", "_blank");
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
+    });
   }
 }
+Need response with citations. Need say recorder blank due bindEvents containing stale chiefnotice/chieflane block or easiest replace whole bindEvents with stable one above. Mention in current app.js there remains stale block in bindEvents on newer file maybe not visible in current snippet? Actually current file snippet still has these bad blocks. Cite. Also maybe recorderView itself is okay. Let's answer precise: replace bindEvents entirely with stable version from earlier, and remove local notice injection; this should restore recorder. Mention if still blank likely due old cached app.js on Render. Include force reload. Need no code citations inside code block. citations in surrounding text.
 
 function hhmmTo12(hhmm) {
   const m = String(hhmm || "").match(/^(\d{1,2}):(\d{2})$/);
