@@ -547,33 +547,44 @@ function myWarningExistsLane(lane) {
   );
 }
 function getChiefJudgeTargets() {
-  const byLane = {};
-  const myConfirmedMap = {};
+  const warningByLane = {};
+  const chiefDsqMap = {};
 
   for (const x of (itemsAll || [])) {
     if (!x) continue;
-    if (x.status !== "confirmed") continue;
-    if (x.level !== "warning") continue;
 
     const lane = String(x.lane || "").trim();
     if (!lane) continue;
 
-    if (!byLane[lane]) byLane[lane] = [];
-    byLane[lane].push(x);
+    // 記録係が確定した警告
+    if (x.status === "confirmed" && x.level === "warning") {
+      if (!warningByLane[lane]) warningByLane[lane] = [];
+      warningByLane[lane].push(x);
+    }
 
-    if (x.judgeId === "CJ") {
-      myConfirmedMap[lane] = true;
+    // 主任自身が出した失格（pending/confirmed どちらでも対象）
+    if (
+      x.judgeId === "CJ" &&
+      (x.level === "dsq1" || x.level === "dsq2") &&
+      (x.status === "pending" || x.status === "confirmed")
+    ) {
+      chiefDsqMap[lane] = true;
     }
   }
 
+  const laneSet = new Set([
+    ...Object.keys(warningByLane),
+    ...Object.keys(chiefDsqMap)
+  ]);
+
   const out = [];
 
-  for (const lane of Object.keys(byLane)) {
-    const arr = byLane[lane];
-    const confirmedCount = arr.length;
-    const ownConfirmed = !!myConfirmedMap[lane];
+  for (const lane of laneSet) {
+    const confirmedCount = (warningByLane[lane] || []).length;
+    const chiefDsq = !!chiefDsqMap[lane];
 
-    if (confirmedCount >= 3 || ownConfirmed) {
+    // 3枚 or 主任失格あり → 告知対象
+    if (confirmedCount >= 3 || chiefDsq) {
       const a = athleteForLane(lane) || {};
       out.push({
         lane,
@@ -581,7 +592,7 @@ function getChiefJudgeTargets() {
         name: a.name || "",
         team: a.team || "",
         confirmedCount,
-        ownConfirmed
+        chiefDsq
       });
     }
   }
@@ -590,10 +601,6 @@ function getChiefJudgeTargets() {
   return out;
 }
 
-function setChiefLane(lane) {
-  uiLane = String(lane || "");
-  render();
-}
 // ===== views =====
 function currentHostLinksHtml() {
   const tokens = state.tokensData || {};
@@ -740,7 +747,7 @@ function chiefJudgeView() {
 
   const lane = (uiLane || "").trim();
   const athlete = lane ? athleteForLane(lane) : null;
-  const disabled = !lane || !athlete;
+  const dsqDisabled = !lane || !athlete;
 
   const targetRows = targets.map((x) => `
     <tr>
@@ -749,8 +756,10 @@ function chiefJudgeView() {
       <td>${esc(x.name || "")}</td>
       <td>${esc(x.team || "")}</td>
       <td>${esc(String(x.confirmedCount))}</td>
-      <td>${x.ownConfirmed ? "あり" : ""}</td>
-      <td><button data-chieflane="${esc(x.lane)}">選択</button></td>
+      <td>${x.chiefDsq ? "あり" : ""}</td>
+      <td>
+        <button data-chiefnotice="${esc(x.lane)}">告知</button>
+      </td>
     </tr>
   `).join("");
 
@@ -774,12 +783,14 @@ function chiefJudgeView() {
 
     <div class="card">
       <div class="notice">
-        確定警告3枚 または 主任の確定警告がある選手のみ表示
+        記録係が確定した<strong>警告3枚</strong>、または
+        主任が<strong>ロス失格 / ベント失格</strong>を出した選手を
+        告知対象として表示します。
       </div>
     </div>
 
     <div class="card">
-      <div class="big">対象選手</div>
+      <div class="big">告知対象一覧</div>
       <table>
         <thead>
           <tr>
@@ -787,40 +798,58 @@ function chiefJudgeView() {
             <th>番号</th>
             <th>氏名</th>
             <th>所属</th>
-            <th>警告数</th>
-            <th>主任</th>
+            <th>確定警告数</th>
+            <th>主任失格</th>
             <th>操作</th>
           </tr>
         </thead>
         <tbody>
-          ${targetRows || `<tr><td colspan="7">対象なし</td></tr>`}
+          ${targetRows || `<tr><td colspan="7">現在、対象はいません。</td></tr>`}
         </tbody>
       </table>
     </div>
 
     <div class="card">
-      <div class="row">
-        <input id="laneInput" value="${esc(lane)}" style="width:80px;text-align:center">
-        <button id="dsq1Btn" ${disabled ? "disabled" : ""}>ロス失格</button>
-        <button id="dsq2Btn" ${disabled ? "disabled" : ""}>ベント失格</button>
-        <button id="noticeBtn" ${disabled ? "disabled" : ""}>告知</button>
+      <div class="notice">
+        こちらは主任が直接、失格を送る操作です。<br>
+        送信後、その選手は上の一覧に出て、告知できるようになります。
       </div>
     </div>
 
     <div class="card">
+      <div class="row" style="align-items:center;gap:12px;flex-wrap:wrap;">
+        <input
+          id="laneInput"
+          type="text"
+          inputmode="numeric"
+          pattern="[0-9]*"
+          maxlength="3"
+          style="width:80px;text-align:center"
+          placeholder="例:1"
+          value="${esc(lane)}"
+        />
+        <button id="dsq1Btn" class="danger" ${dsqDisabled ? "disabled" : ""}>ロス失格</button>
+        <button id="dsq2Btn" class="danger" ${dsqDisabled ? "disabled" : ""}>ベント失格</button>
+      </div>
+    </div>
+
+    <div class="card" id="athleteCard">
       ${athlete ? `
-        <div>${esc(athlete.name)}</div>
-      ` : `選択してください`}
+        <div class="big">${esc(athlete.name)}</div>
+        <div>${athlete.bib ? `競技者番号: ${esc(athlete.bib)}` : ""}</div>
+        <div>${athlete.team ? esc(athlete.team) : ""}</div>
+      ` : `<div>レーンを入力してください</div>`}
     </div>
 
     <div class="card">
+      <div class="big">主任の送信履歴</div>
       <table>
+        <thead><tr><th>時刻</th><th>レーン</th><th>種別</th><th>区分</th><th>状態</th></tr></thead>
         <tbody>${histRows}</tbody>
       </table>
     </div>
   `);
 }
-
 function updateJudgeLiveUI(){
   const p = routePath();
   if (!(p === "/judge" || p === "/chiefjudge" || p === "/")) return;
@@ -1235,7 +1264,18 @@ document.querySelectorAll("[data-chieflane]").forEach((btn) => {
       updateJudgeLiveUI();
     });
   }
+document.querySelectorAll("[data-chiefnotice]").forEach((btn) => {
+  btn.onclick = () => {
+    const lane = String(btn.getAttribute("data-chiefnotice") || "").trim();
+    const athlete = athleteForLane(lane);
+    if (!lane || !athlete) {
+      alert("対象選手が見つかりません");
+      return;
+    }
 
+    sendInfraction(lane, "notice", "notice");
+  };
+});
   const lossCautionBtn = $("#lossCautionBtn");
   if (lossCautionBtn) {
     lossCautionBtn.addEventListener("click", () => {
