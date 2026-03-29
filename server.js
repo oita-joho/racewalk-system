@@ -271,8 +271,6 @@ function snapshotFor(role, judgeId) {
     );
   } else if (role === "judge" && judgeId) {
     items = items.filter((x) => x.judgeId === judgeId);
-  } else if (role === "chiefjudge") {
-    items = items.filter((x) => x.judgeId === "CJ");
   } else if (role === "chief") {
     items = items.filter((x) => x.status === "confirmed");
   }
