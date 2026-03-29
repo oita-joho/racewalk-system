@@ -514,9 +514,7 @@ function buildViewItems(src) {
     out = out.filter((x) => x.judgeId === judgeId);
   }
 
-  if (role === "chiefjudge") {
-    out = out.filter((x) => x.judgeId === "CJ");
-  }
+
 
   out.sort((a, b) => (b.tsMs || 0) - (a.tsMs || 0));
   return out;
@@ -548,7 +546,54 @@ function myWarningExistsLane(lane) {
       (x.status === "pending" || x.status === "confirmed")
   );
 }
+function getChiefJudgeTargets() {
+  const byLane = {};
+  const myConfirmedMap = {};
 
+  for (const x of (itemsAll || [])) {
+    if (!x) continue;
+    if (x.status !== "confirmed") continue;
+    if (x.level !== "warning") continue;
+
+    const lane = String(x.lane || "").trim();
+    if (!lane) continue;
+
+    if (!byLane[lane]) byLane[lane] = [];
+    byLane[lane].push(x);
+
+    if (x.judgeId === "CJ") {
+      myConfirmedMap[lane] = true;
+    }
+  }
+
+  const out = [];
+
+  for (const lane of Object.keys(byLane)) {
+    const arr = byLane[lane];
+    const confirmedCount = arr.length;
+    const ownConfirmed = !!myConfirmedMap[lane];
+
+    if (confirmedCount >= 3 || ownConfirmed) {
+      const a = athleteForLane(lane) || {};
+      out.push({
+        lane,
+        bib: a.bib || "",
+        name: a.name || "",
+        team: a.team || "",
+        confirmedCount,
+        ownConfirmed
+      });
+    }
+  }
+
+  out.sort((a, b) => (parseInt(a.lane, 10) || 0) - (parseInt(b.lane, 10) || 0));
+  return out;
+}
+
+function setChiefLane(lane) {
+  uiLane = String(lane || "");
+  render();
+}
 // ===== views =====
 function currentHostLinksHtml() {
   const tokens = state.tokensData || {};
@@ -691,11 +736,26 @@ function judgeView() {
 }
 
 function chiefJudgeView() {
+  const targets = getChiefJudgeTargets();
+
   const lane = (uiLane || "").trim();
   const athlete = lane ? athleteForLane(lane) : null;
   const disabled = !lane || !athlete;
 
-  const histRows = (items || [])
+  const targetRows = targets.map((x) => `
+    <tr>
+      <td>${esc(x.lane)}</td>
+      <td>${esc(x.bib || "")}</td>
+      <td>${esc(x.name || "")}</td>
+      <td>${esc(x.team || "")}</td>
+      <td>${esc(String(x.confirmedCount))}</td>
+      <td>${x.ownConfirmed ? "あり" : ""}</td>
+      <td><button data-chieflane="${esc(x.lane)}">選択</button></td>
+    </tr>
+  `).join("");
+
+  const histRows = (itemsAll || [])
+    .filter((x) => x.judgeId === "CJ")
     .slice()
     .sort((a, b) => (b.tsMs || 0) - (a.tsMs || 0))
     .map((x) => `
@@ -714,40 +774,47 @@ function chiefJudgeView() {
 
     <div class="card">
       <div class="notice">
-        審判主任は<strong>ロス失格 / ベント失格 / 告知</strong>を送信します。<br>
-        ※送信後は「記録係」が確定ボタンを押して確定します。
+        確定警告3枚 または 主任の確定警告がある選手のみ表示
       </div>
     </div>
 
     <div class="card">
-      <div class="row" style="align-items:center;gap:12px;flex-wrap:wrap;">
-        <input
-          id="laneInput"
-          type="text"
-          inputmode="numeric"
-          pattern="[0-9]*"
-          maxlength="3"
-          style="width:80px;text-align:center"
-          placeholder="例:1"
-        />
-        <button id="dsq1Btn" class="danger" ${disabled ? "disabled" : ""}>ロス失格</button>
-        <button id="dsq2Btn" class="danger" ${disabled ? "disabled" : ""}>ベント失格</button>
+      <div class="big">対象選手</div>
+      <table>
+        <thead>
+          <tr>
+            <th>レーン</th>
+            <th>番号</th>
+            <th>氏名</th>
+            <th>所属</th>
+            <th>警告数</th>
+            <th>主任</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${targetRows || `<tr><td colspan="7">対象なし</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <input id="laneInput" value="${esc(lane)}" style="width:80px;text-align:center">
+        <button id="dsq1Btn" ${disabled ? "disabled" : ""}>ロス失格</button>
+        <button id="dsq2Btn" ${disabled ? "disabled" : ""}>ベント失格</button>
         <button id="noticeBtn" ${disabled ? "disabled" : ""}>告知</button>
       </div>
     </div>
 
-    <div class="card" id="athleteCard">
+    <div class="card">
       ${athlete ? `
-        <div class="big">${esc(athlete.name)}</div>
-        <div>${athlete.bib ? `競技者番号: ${esc(athlete.bib)}` : ""}</div>
-        <div>${athlete.team ? esc(athlete.team) : ""}</div>
-      ` : `<div>未登録レーン（設定係が名簿を登録してください）</div>`}
+        <div>${esc(athlete.name)}</div>
+      ` : `選択してください`}
     </div>
 
     <div class="card">
-      <div class="big">自分の送信履歴（分まで）</div>
       <table>
-        <thead><tr><th>時刻</th><th>レーン</th><th>種別</th><th>区分</th><th>状態</th></tr></thead>
         <tbody>${histRows}</tbody>
       </table>
     </div>
@@ -1152,6 +1219,13 @@ function bindEvents() {
   const p = routePath();
 
   const laneInput = $("#laneInput");
+
+document.querySelectorAll("[data-chieflane]").forEach((btn) => {
+  btn.onclick = () => {
+    setChiefLane(btn.getAttribute("data-chieflane"));
+  };
+});
+  
   if (laneInput) {
     laneInput.value = uiLane;
     laneInput.addEventListener("input", () => {
