@@ -391,98 +391,93 @@ function connect() {
   }
 };
 
-  socket.onmessage = (ev) => {
-    const msg = JSON.parse(ev.data);
+socket.onmessage = (ev) => {
+  const msg = JSON.parse(ev.data);
 
-    if (msg.op === "SNAPSHOT") {
-      raceId = msg.raceId || "";
-      currentGroup = msg.currentGroup || 1;
+  if (msg.op === "SNAPSHOT") {
+    raceId = msg.raceId || "";
+    currentGroup = msg.currentGroup || 1;
 
-      rosterByLane = {};
-      for (const a of (msg.roster || [])) rosterByLane[String(a.lane)] = a;
-
-      itemsAll = msg.items || [];
-      items = buildViewItems(itemsAll);
-
-      infoLine = `接続OK（raceId=${raceId} / グループ${currentGroup}）`;
-      render();
-      return;
+    rosterByLane = {};
+    for (const a of (msg.roster || [])) {
+      rosterByLane[String(a.lane)] = a;
     }
 
-if (msg.op === "EVENT") {
-  const kind = msg.kind;
+    itemsAll = msg.items || [];
+    items = buildViewItems(itemsAll);
 
-  if (kind === "ROSTER") {
-    rosterByLane = {};
-    for (const a of (msg.roster || [])) rosterByLane[String(a.lane)] = a;
-    render();
-    return;
-  }
-
-  if (kind === "RESET") {
-    itemsAll = [];
-    items = [];
-    raceId = msg.raceId || "";
-    currentGroup = msg.currentGroup || currentGroup;
     infoLine = `接続OK（raceId=${raceId} / グループ${currentGroup}）`;
     render();
     return;
   }
 
-  if (msg.item && msg.item.id) {
-    const inf = msg.item;
+  if (msg.op === "EVENT") {
+    const kind = msg.kind;
 
-    const idx = itemsAll.findIndex((x) => x.id === inf.id);
-    if (idx >= 0) itemsAll[idx] = inf;
-    else itemsAll.unshift(inf);
+    if (kind === "ROSTER") {
+      rosterByLane = {};
+      for (const a of (msg.roster || [])) {
+        rosterByLane[String(a.lane)] = a;
+      }
+      render();
+      return;
+    }
 
-    items = buildViewItems(itemsAll);
+    if (kind === "RESET") {
+      itemsAll = [];
+      items = [];
+      raceId = msg.raceId || "";
+      currentGroup = msg.currentGroup || currentGroup;
+      infoLine = `接続OK（raceId=${raceId} / グループ${currentGroup}）`;
+      render();
+      return;
+    }
+
+    if (msg.item && msg.item.id) {
+      const inf = msg.item;
+
+      const idx = itemsAll.findIndex((x) => x.id === inf.id);
+      if (idx >= 0) itemsAll[idx] = inf;
+      else itemsAll.unshift(inf);
+
+      items = buildViewItems(itemsAll);
+      render();
+      return;
+    }
+  }
+
+  if (msg.op === "REJECT") {
+    alert(msg.reason || "拒否されました");
+    return;
+  }
+
+  if (msg.op === "ROSTER_DATA") {
+    hostSelectedGroup = msg.group || hostSelectedGroup;
+    hostRosterCache = Array.isArray(msg.roster) ? msg.roster : [];
     render();
     return;
   }
-}
 
-}
+  if (msg.op === "TOKENS_DATA") {
+    state.tokensData = msg.tokens || {};
+    render();
+    return;
+  }
 
-     
+  if (msg.op === "OK") {
+    if (msg.kind === "REGEN_TOKEN") {
+      alert(`${msg.target} のトークンを再発行しました`);
+      send({ op: "GET_TOKENS" });
     }
 
-    if (msg.op === "REJECT") {
-      alert(msg.reason || "拒否されました");
-      return;
+    if (msg.kind === "REGEN_ALL_TOKENS") {
+      alert("全トークンを再発行しました");
+      send({ op: "GET_TOKENS" });
     }
 
-    if (msg.op === "ROSTER_DATA") {
-      hostSelectedGroup = msg.group || hostSelectedGroup;
-      hostRosterCache = Array.isArray(msg.roster) ? msg.roster : [];
-      render();
-      return;
-    }
-
-    if (msg.op === "TOKENS_DATA") {
-      console.log("TOKENS_DATA", msg.tokens);
-      state.tokensData = msg.tokens || {};
-      render();
-      return;
-    }
-    
-    if (msg.op === "OK") {
-      console.log("OK:", msg);
-
-      if (msg.kind === "REGEN_TOKEN") {
-        alert(`${msg.target} のトークンを再発行しました`);
-        send({ op: "GET_TOKENS" });
-      }
-
-      if (msg.kind === "REGEN_ALL_TOKENS") {
-        alert("全トークンを再発行しました");
-        send({ op: "GET_TOKENS" });
-      }
-
-      return;
-    }
-  };
-
+    return;
+  }
+};
   socket.onclose = () => {
     infoLine = "切断…再接続します";
     render();
