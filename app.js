@@ -1330,7 +1330,6 @@ document.querySelectorAll("[data-chiefnotice]").forEach((btn) => {
     render();
   };
 });
-  }
 
   const lossWarnBtn = $("#lossWarnBtn");
   if (lossWarnBtn) {
