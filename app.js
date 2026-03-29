@@ -1250,6 +1250,7 @@ function hostView() {
 }
 
 // ===== render =====
+// ===== render =====
 function render() {
   const p = routePath();
 
@@ -1304,16 +1305,11 @@ function bindEvents() {
       send({ op: "NEW_CAUTION", lane, type: "loss", judgeId });
       uiLane = "";
       render();
-    });
-  }
-
-  const bentCautionBtn = $("#bentCautionBtn");
-  if (bentCautionBtn) {
-    bentCautionBtn.addEventListener("click", () => {
-      const lane = (uiLane || "").trim();
-      send({ op: "NEW_CAUTION", lane, type: "bent", judgeId });
-      uiLane = "";
-      render();
+      setTimeout(() => {
+        const inp = $("#laneInput");
+        if (inp) inp.focus();
+        updateJudgeLiveUI();
+      }, 0);
     });
   }
 
@@ -1324,6 +1320,26 @@ function bindEvents() {
       send({ op: "NEW_WARNING", lane, type: "loss", judgeId });
       uiLane = "";
       render();
+      setTimeout(() => {
+        const inp = $("#laneInput");
+        if (inp) inp.focus();
+        updateJudgeLiveUI();
+      }, 0);
+    });
+  }
+
+  const bentCautionBtn = $("#bentCautionBtn");
+  if (bentCautionBtn) {
+    bentCautionBtn.addEventListener("click", () => {
+      const lane = (uiLane || "").trim();
+      send({ op: "NEW_CAUTION", lane, type: "bent", judgeId });
+      uiLane = "";
+      render();
+      setTimeout(() => {
+        const inp = $("#laneInput");
+        if (inp) inp.focus();
+        updateJudgeLiveUI();
+      }, 0);
     });
   }
 
@@ -1334,6 +1350,11 @@ function bindEvents() {
       send({ op: "NEW_WARNING", lane, type: "bent", judgeId });
       uiLane = "";
       render();
+      setTimeout(() => {
+        const inp = $("#laneInput");
+        if (inp) inp.focus();
+        updateJudgeLiveUI();
+      }, 0);
     });
   }
 
@@ -1365,10 +1386,10 @@ function bindEvents() {
   });
 
   const csvBtn = $("#csvBtn");
-  if (csvBtn) csvBtn.addEventListener("click", exportCsv);
+  if (csvBtn) csvBtn.addEventListener("click", () => exportCsv());
 
   const printBtn = $("#printBtn");
-  if (printBtn) printBtn.addEventListener("click", openPrint);
+  if (printBtn) printBtn.addEventListener("click", () => openPrint());
 
   const resetBtn = $("#resetBtn");
   if (resetBtn) {
@@ -1395,6 +1416,7 @@ function bindEvents() {
     const csvImportSaveBtn = $("#csvImportSaveBtn");
 
     if (groupSelect) groupSelect.value = String(hostSelectedGroup);
+
     if (hLane) hLane.value = hostForm.lane;
     if (hBib) hBib.value = hostForm.bib;
     if (hName) hName.value = hostForm.name;
@@ -1418,18 +1440,90 @@ function bindEvents() {
     if (hName) hName.addEventListener("input", () => (hostForm.name = hName.value));
     if (hTeam) hTeam.addEventListener("input", () => (hostForm.team = hTeam.value));
 
-    if (loadBtn) loadBtn.addEventListener("click", () => {
-      send({ op: "LOAD_ROSTER", group: hostSelectedGroup });
-    });
+    async function readCsvFileAsText(file, enc = "utf-8") {
+      const buf = await file.arrayBuffer();
+      try {
+        return new TextDecoder(enc).decode(buf);
+      } catch {
+        return new TextDecoder("utf-8").decode(buf);
+      }
+    }
+
+    async function importCsv(doSave = false) {
+      const csvFile = $("#csvFile");
+      const csvEnc = $("#csvEnc");
+
+      if (!csvFile || !csvFile.files || !csvFile.files[0]) {
+        alert("CSVファイルを選択してください");
+        return;
+      }
+
+      const file = csvFile.files[0];
+      const enc = (csvEnc && csvEnc.value) ? csvEnc.value : "utf-8";
+
+      const text = await readCsvFileAsText(file, enc);
+      const rows = parseCsv(text);
+      const roster = csvRowsToRoster(rows);
+
+      if (!roster.length) {
+        alert("有効な行がありませんでした（lane,name 必須 / レーンは半角数字）");
+        return;
+      }
+
+      hostRosterCache = roster;
+      hostDirty = true;
+      render();
+
+      if (doSave) {
+        send({ op: "SAVE_ROSTER", group: hostSelectedGroup, roster: hostRosterCache });
+        hostDirty = false;
+        alert(`グループ${hostSelectedGroup} を保存しました`);
+      } else {
+        alert(`CSVを読み込みました：${roster.length}名`);
+      }
+    }
+
+    if (loadBtn) {
+      loadBtn.addEventListener("click", () => {
+        send({ op: "LOAD_ROSTER", group: hostSelectedGroup });
+      });
+    }
 
     if (saveBtn) {
       saveBtn.addEventListener("click", () => {
-        send({ op: "SAVE_ROSTER", group: hostSelectedGroup, roster: hostRosterCache });
+        const roster = hostRosterCache.map((a) => ({
+          lane: String(a.lane || "").trim(),
+          bib: String(a.bib || ""),
+          name: String(a.name || "").trim(),
+          team: String(a.team || ""),
+        }));
+        send({ op: "SAVE_ROSTER", group: hostSelectedGroup, roster });
+        hostDirty = false;
+        alert(`グループ${hostSelectedGroup} を保存しました`);
       });
     }
 
     if (applyBtn) {
       applyBtn.addEventListener("click", () => {
+        if (!hostRosterCache.length) {
+          alert("名簿が0件です。読み込みまたは保存を確認してください。");
+          return;
+        }
+
+        const hasInvalid = hostRosterCache.some(a =>
+          !String(a.lane || "").trim() || !String(a.name || "").trim()
+        );
+        if (hasInvalid) {
+          alert("レーンまたは氏名が空の行があります。確認してください。");
+          return;
+        }
+
+        if (hostDirty) {
+          const go = confirm("未保存の変更があります。保存せずに開始しますか？");
+          if (!go) return;
+        }
+
+        if (!confirm(`グループ${hostSelectedGroup} を開始します（名簿反映＋ログ初期化）。よろしいですか？`)) return;
         send({ op: "APPLY_GROUP", group: hostSelectedGroup });
       });
     }
@@ -1533,7 +1627,11 @@ function bindEvents() {
         <div style="border:1px solid #999;border-radius:10px;padding:12px;break-inside:avoid;">
           <div style="font-weight:700;margin-bottom:8px;">${esc(x.label)}</div>
           <div style="text-align:center;margin-bottom:8px;">
-            <img src="${esc(qrImgUrl(x.url))}" style="width:180px;height:180px;" alt="${esc(x.label)} QR" />
+            <img
+              src="${esc(qrImgUrl(x.url))}"
+              style="width:180px;height:180px;"
+              alt="${esc(x.label)} QR"
+            />
           </div>
           <div style="font-size:11px;word-break:break-all;">${esc(x.url)}</div>
         </div>
@@ -1546,15 +1644,30 @@ function bindEvents() {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>競歩システム QR一覧</title>
 <style>
-  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;margin:16px;}
-  h1{font-size:22px;margin:0 0 12px;}
-  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}
+  body{
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif;
+    margin:16px;
+  }
+  h1{ font-size:22px; margin:0 0 12px; }
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(2, 1fr);
+    gap:12px;
+  }
+  @media print{
+    body{ margin:10mm; }
+    .grid{ gap:10px; }
+  }
 </style>
 </head>
 <body>
   <h1>競歩システム QR一覧</h1>
-  <div class="grid">${cardsHtml}</div>
-<script>window.onload=()=>window.print();</script>
+  <div class="grid">
+    ${cardsHtml}
+  </div>
+<script>
+window.onload = () => window.print();
+</script>
 </body>
 </html>`;
 
@@ -1565,6 +1678,7 @@ function bindEvents() {
     });
   }
 }
+
 function hhmmTo12(hhmm) {
   const m = String(hhmm || "").match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return String(hhmm || "");
@@ -1583,18 +1697,18 @@ function applyRoute() {
   roleToken = q.get("t") || "";
 
   if (p === "/host") {
-  role = "host";
-  judgeId = null;
-  render();
+    role = "host";
+    judgeId = null;
+    render();
 
-  if (socket && socket.readyState === 1) {
-    hello();
-    send({ op: "LOAD_ROSTER", group: hostSelectedGroup });
-    send({ op: "GET_TOKENS" });
+    if (socket && socket.readyState === 1) {
+      hello();
+      send({ op: "LOAD_ROSTER", group: hostSelectedGroup });
+      send({ op: "GET_TOKENS" });
+    }
+
+    return;
   }
-
-  return;
-}
 
   if (p === "/recorder") {
     role = "recorder";
@@ -1648,6 +1762,7 @@ window.addEventListener("beforeunload", (e) => {
     e.returnValue = "";
   }
 });
+
 // init
 syncServerClock();
 setInterval(syncServerClock, 60000);
