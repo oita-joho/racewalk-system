@@ -115,7 +115,11 @@ function judgeIdToRole(judgeId) {
 
 function tokenOkFor(role, judgeId, token) {
   // board と host は一時公開
-  if (role === "board" || role === "host") return true;
+  if (role === "board") return true; // boardは公開のまま
+
+if (role === "host") {
+  return TOKENS.host === String(token || "").trim();
+}
 
   const t = String(token || "").trim();
   if (!t) return false;
